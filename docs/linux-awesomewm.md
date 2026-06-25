@@ -30,9 +30,12 @@ Awesome 4.3+ (it uses <code>awful.keyboard.append_global_keybindings</code>,
 Install the project as a Claude Code plugin so the hooks write `state.json`:
 
 ```
-/plugin marketplace add m1ckc3s/claude-status-bar
-/plugin install claude-status-bar@claude-status-bar
+/plugin marketplace add MrMichou/claude-status-bar-awesomewm
+/plugin install claude-status-bar-awesomewm@claude-status-bar-awesomewm
 ```
+
+> Use this fork's repo, **not** the upstream `m1ckc3s/claude-status-bar` — only this
+> fork carries the cross-platform hook fixes (the Linux `lifecycle.js` guards).
 
 The hooks (`hooks/update.js`, `hooks/lifecycle.js`) are cross-platform — on Linux
 the macOS app-launch step is skipped (the widget is always running inside Awesome),
@@ -44,8 +47,8 @@ The animation frames are stored base64-encoded in the macOS Swift sources; extra
 them to real PNGs once:
 
 ```bash
-git clone https://github.com/m1ckc3s/claude-status-bar
-cd claude-status-bar
+git clone https://github.com/MrMichou/claude-status-bar-awesomewm
+cd claude-status-bar-awesomewm
 node tools/extract-frames.js
 ```
 
