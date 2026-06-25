@@ -402,7 +402,8 @@ local function effective_state(st)
   return s
 end
 
-local poll = gears.timer {
+-- Autostarts itself; we keep no reference to the timer.
+gears.timer {
   timeout = cfg.poll_seconds,
   call_now = true,
   autostart = true,
@@ -435,7 +436,8 @@ local poll = gears.timer {
 
 -- Poll the Anthropic Statuspage (async via curl, so the event loop never blocks). On a
 -- none<->incident transition we notify and refresh the widget; otherwise we just remember it.
-local service_poll = gears.timer {
+-- Autostarts itself; we keep no reference to the timer.
+gears.timer {
   timeout = cfg.service_poll_seconds,
   call_now = true,
   autostart = cfg.check_service and has_curl,
