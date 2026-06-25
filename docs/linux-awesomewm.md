@@ -82,13 +82,18 @@ local claude_status = require("ui.bar.widgets.claude_status")
 `Mod + Ctrl + r` (or your reload binding). The widget appears and updates within
 ~0.4s of any Claude Code activity.
 
-## Active-sessions menu
+## Menus
 
-**Click the widget** (left or right) to toggle a popup listing every active Claude
-Code session, each with its project name, current state (colored dot + label) and
-elapsed time. Click again to close.
+- **Left click** — toggle the **active-sessions popup**: every running Claude Code
+  session with its project name, current state (colored dot + label) and elapsed time.
+- **Right click** — the **settings menu**: pick the animation style (Crab / Spark /
+  Claude Code glyphs), toggle the timer, and toggle the permission/done notifications.
+  Picks are persisted to `~/.claude/statusbar/widget.json` and override the `cfg`
+  defaults, so they survive an Awesome restart. (Changing the style triggers a quick
+  Awesome restart, since each style builds its icon differently.)
 
-You can also bind it to a key — the widget exposes `toggle_sessions_menu()`:
+You can also bind keys — the widget exposes `toggle_sessions_menu()` and
+`toggle_settings_menu()`:
 
 ```lua
 awful.key({ modkey }, "c", function()

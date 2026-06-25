@@ -40,6 +40,26 @@ local FPS = { web = 9, crab = 12.5 }
 local CODE = { glyphs = { "✻", "✽", "✶", "✳", "✢" }, sub = 18, dip = 0.14, base_pt = 14, cycle = 3.8 }
 --==============================================================================
 
+-- Persisted settings (the right-click menu) override the cfg defaults above so
+-- your picks survive an Awesome restart.
+local settings_path = os.getenv("HOME") .. "/.claude/statusbar/widget.json"
+local function load_settings()
+  local f = io.open(settings_path, "r"); if not f then return end
+  local raw = f:read("*a"); f:close()
+  local t = json.decode(raw); if type(t) ~= "table" then return end
+  if t.style then cfg.style = t.style end
+  if t.show_timer ~= nil then cfg.show_timer = t.show_timer end
+  if t.notify_permission ~= nil then cfg.notify_permission = t.notify_permission end
+  if t.notify_done ~= nil then cfg.notify_done = t.notify_done end
+end
+local function save_settings()
+  local f = io.open(settings_path, "w"); if not f then return end
+  f:write(string.format([[{"style":%q,"show_timer":%s,"notify_permission":%s,"notify_done":%s}]],
+    cfg.style, tostring(cfg.show_timer), tostring(cfg.notify_permission), tostring(cfg.notify_done)))
+  f:close()
+end
+load_settings()
+
 local state_path = os.getenv("HOME") .. "/.claude/statusbar/state.json"
 local module_dir = (debug.getinfo(1, "S").source:match("^@(.*/)")) or "./"
 local frames_dir = module_dir .. "frames/"
@@ -444,14 +464,53 @@ local function toggle_menu()
   awful.placement.no_offscreen(menu)
 end
 
+--==[ Settings menu (right-click) ]==-------------------------------------------
+local function set_style(s)
+  if s == cfg.style then return end
+  cfg.style = s; save_settings()
+  -- The icon widget is built per-style (imagebox vs textbox) and frames load once,
+  -- so a clean restart is the simplest, race-free way to switch styles.
+  awesome.restart()
+end
+
+local function bullet(on) return on and "● " or "○ " end
+local function check(on) return on and "✓ " or "    " end
+
+local function build_settings_menu()
+  return awful.menu {
+    items = {
+      { "Animation style", {
+        { bullet(cfg.style == "crab") .. "Crab walking",      function() set_style("crab") end },
+        { bullet(cfg.style == "web") .. "Claude spark",       function() set_style("web") end },
+        { bullet(cfg.style == "code") .. "Claude Code glyphs", function() set_style("code") end },
+      } },
+      { check(cfg.show_timer) .. "Show timer",
+        function() cfg.show_timer = not cfg.show_timer; save_settings(); apply() end },
+      { check(cfg.notify_permission) .. "Notify on permission",
+        function() cfg.notify_permission = not cfg.notify_permission; save_settings() end },
+      { check(cfg.notify_done) .. "Notify on done",
+        function() cfg.notify_done = not cfg.notify_done; save_settings() end },
+    },
+  }
+end
+
+local settings_m
+local function toggle_settings_menu()
+  if settings_m then settings_m:hide(); settings_m = nil; return end
+  settings_m = build_settings_menu()
+  settings_m:show()
+end
+
+-- Left click → active-sessions popup; right click → settings menu.
 root:buttons(gears.table.join(
   awful.button({}, 1, toggle_menu),
-  awful.button({}, 3, toggle_menu)
+  awful.button({}, 3, toggle_settings_menu)
 ))
 
--- Also exposed so you can bind a key, e.g.:
---   awful.key({ modkey }, "c", function() require("ui.bar.widgets.claude_status").toggle_sessions_menu() end)
+-- Exposed so you can bind keys, e.g.:
+--   awful.key({ modkey }, "z", function() require("ui.bar.widgets.claude_status").toggle_sessions_menu() end)
 root.toggle_sessions_menu = toggle_menu
+root.toggle_settings_menu = toggle_settings_menu
 
 apply()
 
