@@ -8,7 +8,7 @@ turn, and a click-to-open menu listing every active session.
 _Built so you can tab away during a long "thinking" stretch and still see, at a
 glance, whether Claude is working, waiting on you, or done._
 
-> Linux/awesomewm port of the macOS **Claude Status Bar** by **[@mickces](https://x.com/mickces)** ([m1ckc3s/claude-status-bar](https://github.com/m1ckc3s/claude-status-bar)). This fork is Linux-focused: the macOS app itself isn't included, only the animation frames it originated (`Sources/*.swift`, decoded into PNGs by `tools/extract-frames.js`). All credit for the original idea, design, and artwork goes to the author — see the [original repo](https://github.com/m1ckc3s/claude-status-bar) for the macOS app.
+> Linux/awesomewm port of the macOS **Claude Status Bar** by **[@mickces](https://x.com/mickces)** ([m1ckc3s/claude-status-bar](https://github.com/m1ckc3s/claude-status-bar)). This fork is Linux-focused: the macOS app itself isn't included, only the animation frames it originated (bundled as PNGs under `linux/awesomewm/claude_status/frames/`). All credit for the original idea, design, and artwork goes to the author — see the [original repo](https://github.com/m1ckc3s/claude-status-bar) for the macOS app.
 
 ## What it shows
 
@@ -40,9 +40,8 @@ Full instructions in **[docs/linux-awesomewm.md](docs/linux-awesomewm.md)**. In 
 
 1. Install the hooks (Claude Code plugin, or wire them manually) so a real session
    writes `~/.claude/statusbar/state.json`.
-2. `node tools/extract-frames.js` to decode the icon frames into PNGs.
-3. Copy/symlink `linux/awesomewm/claude_status/` into `~/.config/awesome/ui/bar/widgets/`.
-4. `require("ui.bar.widgets.claude_status")` and drop it in your wibar; reload Awesome.
+2. Copy/symlink `linux/awesomewm/claude_status/` into `~/.config/awesome/ui/bar/widgets/`.
+3. `require("ui.bar.widgets.claude_status")` and drop it in your wibar; reload Awesome.
 
 ## How it works
 

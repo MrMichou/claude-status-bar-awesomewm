@@ -43,24 +43,15 @@ The hooks (`hooks/update.js`, `hooks/lifecycle.js`) are cross-platform — on Li
 the macOS app-launch step is skipped (the widget is always running inside Awesome),
 and session tracking under `~/.claude/statusbar/sessions.d/` still works.
 
-### 2. Generate the icon frames
+### 2. Add the widget to your config
 
-The animation frames are stored base64-encoded in the macOS Swift sources; extract
-them to real PNGs once:
+The animation frames ship as ready-to-use PNGs under
+`linux/awesomewm/claude_status/frames/`, so there's nothing to generate. Copy (or
+symlink) the widget folder into your Awesome config:
 
 ```bash
 git clone https://github.com/MrMichou/claude-status-bar-awesomewm
 cd claude-status-bar-awesomewm
-node tools/extract-frames.js
-```
-
-This writes `linux/awesomewm/claude_status/frames/{web,crab}/*.png` and `logo.png`.
-
-### 3. Add the widget to your config
-
-Copy (or symlink) the widget folder into your Awesome config:
-
-```bash
 ln -s "$PWD/linux/awesomewm/claude_status" ~/.config/awesome/ui/bar/widgets/claude_status
 # or: cp -r linux/awesomewm/claude_status ~/.config/awesome/ui/bar/widgets/
 ```
@@ -82,7 +73,7 @@ local claude_status = require("ui.bar.widgets.claude_status")
 }
 ```
 
-### 4. Reload Awesome
+### 3. Reload Awesome
 
 `Mod + Ctrl + r` (or your reload binding). The widget appears and updates within
 ~0.4s of any Claude Code activity.
@@ -156,7 +147,8 @@ freezes on a live state. Like the macOS app, the widget recovers by detecting th
   and writing state: `cat ~/.claude/statusbar/state.json` during a Claude turn.
   Enable hook logging with `CLAUDE_STATUSBAR_DEBUG=1` and check
   `~/.claude/statusbar/hooks.log`.
-- **A black square instead of the orange spark:** the frames weren't extracted —
-  re-run `node tools/extract-frames.js` and check `frames/web/00.png` exists.
+- **A black square instead of the orange spark:** the frame PNGs are missing —
+  check `linux/awesomewm/claude_status/frames/web/00.png` exists where you copied
+  the widget folder.
 - **`require` error on reload:** check the module path matches where you copied the
   folder, and that `lgi` is available (`echo 'return require("lgi") ~= nil' | awesome-client`).
