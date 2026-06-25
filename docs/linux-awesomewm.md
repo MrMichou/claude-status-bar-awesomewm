@@ -10,6 +10,12 @@ timer while Claude works, an amber dot while awaiting permission, and a resting
 logo when idle. Optional `naughty` notifications fire on permission requests and
 turn completion.
 
+On top of the macOS feature set it also watches the **Anthropic service status**
+(the public [Statuspage](https://status.claude.com)): when an incident is live it
+shows a **red dot + "Claude down"** with the incident description over whatever the
+local session state is, and (optionally) notifies you when the outage starts and
+when it clears.
+
 <sub>Developed and tested on <code>awesome v4.3-1700-gcd36f9023</code> — a git-master
 build (≈4.4-dev), compiled against Lua 5.4.8, API level 4. Should work on any
 Awesome 4.3+ (it uses <code>awful.keyboard.append_global_keybindings</code>,
@@ -24,6 +30,12 @@ Awesome 4.3+ (it uses <code>awful.keyboard.append_global_keybindings</code>,
 - Claude Code (CLI or Desktop)
 - `xprop` (from `xorg-xprop`) — optional, only for click-to-jump-to-window; the menu
   works without it, sessions just won't be clickable
+- `xdotool` — optional, only for the **Yes/No** buttons on the permission notification
+  (it presses the key in the session's terminal); without it the popup still appears,
+  just without the buttons
+- `curl` — optional, only for the **Claude service down** indicator (it polls the
+  Anthropic Statuspage); without it the service check is silently disabled and the rest
+  of the widget works unchanged
 
 ## Install
 
@@ -85,7 +97,7 @@ local claude_status = require("ui.bar.widgets.claude_status")
   A session whose window is known shows a `↗` hint and is **clickable** — clicking it
   jumps to that terminal window (switches tag, unminimizes, raises and focuses it).
 - **Right click** — the **settings menu**: pick the animation style (Crab / Spark /
-  Claude Code glyphs), toggle the timer, and toggle the permission/done notifications.
+  Claude Code glyphs), toggle the timer, and toggle the permission/done/outage notifications.
   Picks are persisted to `~/.claude/statusbar/widget.json` and override the `cfg`
   defaults, so they survive an Awesome restart. (Changing the style triggers a quick
   Awesome restart, since each style builds its icon differently.)
@@ -117,14 +129,22 @@ Edit the `cfg` table at the top of `claude_status/init.lua`:
 | `style` | `"crab"` | `"crab"` (pixel-art crab), `"web"` (Claude spark), or `"code"` (terminal glyph spinner ✻✽✶✳✢) |
 | `brand` | `"#d97757"` | Tint color for the spark / logo (alpha-mask frames) |
 | `amber` | `"#f2bb2e"` | "Awaiting permission" dot color |
+| `down` | `"#e5484d"` | "Claude service down" dot color |
 | `icon_size` | `dpi(18)` | Icon height/width |
 | `show_timer` | `true` | Show the `1m 1s` elapsed clock |
 | `hide_when_idle` | `false` | Hide the widget at idle (vs. resting logo) |
 | `notify_permission` | `true` | `naughty` popup on permission requests |
+| `notify_permission_actions` | `true` | Add **Yes**/**No** buttons to that popup (needs `xdotool` + a captured window id). Clicking focuses the session's terminal and presses the matching key. |
+| `permission_yes_key` | `"Return"` | Key sent for **Yes** (Claude Code's default-highlighted option) |
+| `permission_no_key` | `"Escape"` | Key sent for **No** ("tell Claude what to do differently") |
 | `notify_done` | `true` | `naughty` popup when a turn finishes |
 | `done_min_seconds` | `60` | Only notify "done" for turns at least this long (`0` = always) |
 | `sound_cmd` | `nil` | Shell command to play on completion, e.g. `"paplay /usr/share/sounds/freedesktop/stereo/complete.oga"` |
 | `poll_seconds` | `0.4` | `state.json` poll interval |
+| `check_service` | `true` | Poll the Anthropic Statuspage and show "Claude down" during an incident (needs `curl`) |
+| `service_url` | `"https://status.claude.com/api/v2/status.json"` | Statuspage endpoint to poll |
+| `service_poll_seconds` | `60` | Service-status poll interval (network, so far slower than `poll_seconds`) |
+| `notify_service` | `true` | `naughty` popup when an outage starts and when it clears |
 
 ## How it works
 
@@ -141,6 +161,13 @@ freezes on a live state. Like the macOS app, the widget recovers by detecting th
 `interrupted by user` marker at the tail of the session transcript, with an absolute
 15-minute age safety net — so it never stays stuck animating or on the amber dot.
 
+Separately, a second timer polls the Anthropic Statuspage every `service_poll_seconds`
+by shelling out to `curl` asynchronously (`awful.spawn.easy_async`, so the event loop
+never blocks). Any `status.indicator` other than `none` (`minor` / `major` / `critical`)
+counts as an incident: the bar swaps to a red dot + "Claude down — <description>" over
+the normal session state and reverts the moment the incident clears. Transitions in and
+out of an incident fire a `naughty` notification when `notify_service` is on.
+
 ## Troubleshooting
 
 - **Nothing shows / stuck on the resting logo:** confirm the hooks are installed
@@ -152,3 +179,6 @@ freezes on a live state. Like the macOS app, the widget recovers by detecting th
   the widget folder.
 - **`require` error on reload:** check the module path matches where you copied the
   folder, and that `lgi` is available (`echo 'return require("lgi") ~= nil' | awesome-client`).
+- **"Claude down" never shows / always shows:** the service check needs `curl` and outbound
+  network access. Verify the endpoint by hand: `curl -fsS https://status.claude.com/api/v2/status.json`.
+  Set `check_service = false` in `cfg` to disable it entirely.

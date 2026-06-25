@@ -26,14 +26,26 @@ local cfg = {
   style          = "crab",       -- "web" (Claude spark), "crab", or "code" (glyph spinner)
   brand          = "#d97757",    -- Anthropic orange, used to tint the alpha-mask frames
   amber          = "#f2bb2e",    -- "awaiting permission" dot
+  down           = "#e5484d",    -- "Claude service down" dot (Anthropic Statuspage incident)
   icon_size      = dpi(18),
   show_timer     = true,
   hide_when_idle = false,        -- false: show the resting logo at idle (like macOS)
   notify_permission = true,
   notify_done       = true,
+  -- Yes/No buttons on the permission notification. Clicking one focuses the session's
+  -- terminal and synthesizes the keypress (needs xdotool + a captured window id).
+  notify_permission_actions = true,
+  permission_yes_key = "Return", -- Claude Code's default-highlighted "Yes"
+  permission_no_key  = "Escape", -- "No, and tell Claude what to do differently"
   done_min_seconds  = 60,        -- only notify "done" for turns at least this long (0 = always)
   sound_cmd      = nil,          -- e.g. "paplay /usr/share/sounds/freedesktop/stereo/complete.oga"
   poll_seconds   = 0.4,
+  -- Anthropic service health, polled from the public Statuspage. When an incident is live the
+  -- widget shows a red dot + "Claude down" over the normal session state and (optionally) notifies.
+  check_service  = true,
+  service_url    = "https://status.claude.com/api/v2/status.json",
+  service_poll_seconds = 60,     -- network is slow; poll far less often than the local state
+  notify_service = true,
 }
 local FPS = { web = 9, crab = 12.5 }
 -- "code" style: Claude Code's terminal glyph spinner, tweened with a scale pulse.
@@ -51,11 +63,15 @@ local function load_settings()
   if t.show_timer ~= nil then cfg.show_timer = t.show_timer end
   if t.notify_permission ~= nil then cfg.notify_permission = t.notify_permission end
   if t.notify_done ~= nil then cfg.notify_done = t.notify_done end
+  if t.notify_permission_actions ~= nil then cfg.notify_permission_actions = t.notify_permission_actions end
+  if t.notify_service ~= nil then cfg.notify_service = t.notify_service end
 end
 local function save_settings()
   local f = io.open(settings_path, "w"); if not f then return end
-  f:write(string.format([[{"style":%q,"show_timer":%s,"notify_permission":%s,"notify_done":%s}]],
-    cfg.style, tostring(cfg.show_timer), tostring(cfg.notify_permission), tostring(cfg.notify_done)))
+  f:write(string.format(
+    [[{"style":%q,"show_timer":%s,"notify_permission":%s,"notify_done":%s,"notify_permission_actions":%s,"notify_service":%s}]],
+    cfg.style, tostring(cfg.show_timer), tostring(cfg.notify_permission), tostring(cfg.notify_done),
+    tostring(cfg.notify_permission_actions), tostring(cfg.notify_service)))
   f:close()
 end
 load_settings()
@@ -107,6 +123,7 @@ local frames = is_code and {} or load_frames()
 -- spark style rests on the tinted Claude logo, like the macOS app.
 local resting = (cfg.style == "crab") and frames[1] or (tint(frames_dir .. "logo.png", cfg.brand) or frames[1])
 local dot = make_dot(cfg.amber, cfg.icon_size)
+local down_dot = make_dot(cfg.down, cfg.icon_size)
 local code_count = #CODE.glyphs * CODE.sub
 local fps = is_code and (code_count / CODE.cycle) or (FPS[cfg.style] or 9)
 
@@ -158,6 +175,10 @@ local frame_i = 1
 local animating = false
 local prev_state = nil
 local turn_started = 0 -- remembered while >0 so we know the turn length at "done"
+
+-- Anthropic service health from the Statuspage; "none" (or "") means all systems operational.
+local service = { indicator = "none", description = "" }
+local function service_down() return service.indicator ~= "none" and service.indicator ~= "" end
 
 local function fmt_elapsed(startedAt)
   local secs = math.max(0, os.time() - startedAt)
@@ -218,6 +239,16 @@ local function show_static(kind)
 end
 
 local function apply()
+  -- A live service incident takes over the bar regardless of the local session state.
+  if cfg.check_service and service_down() then
+    animating = false; anim_timer:stop()
+    if is_code then code_static("●", cfg.down) else icon.image = down_dot end
+    local desc = (service.description ~= "" and (" — " .. service.description)) or ""
+    set_label("Claude down" .. desc, 0)
+    root.visible = true
+    return
+  end
+
   local s = cur.state
   local animate = (s == "thinking" or s == "tool")
 
@@ -245,15 +276,60 @@ local function apply()
   end
 end
 
+-- Defined in the sessions section further down; notify() (below) needs them to turn a
+-- permission prompt's Yes/No click into a keypress in that session's terminal.
+local read_window_id, focus_window
+
+-- Detected once: the Yes/No buttons synthesize keys via xdotool, so without it we hide
+-- them rather than show buttons that silently do nothing.
+local has_xdotool = (function()
+  local p = io.popen("command -v xdotool 2>/dev/null"); if not p then return false end
+  local out = p:read("*a"); p:close(); return out ~= nil and out:match("%S") ~= nil
+end)()
+
+-- The service poll shells out to curl; without it we skip the check rather than fail silently.
+local has_curl = (function()
+  local p = io.popen("command -v curl 2>/dev/null"); if not p then return false end
+  local out = p:read("*a"); p:close(); return out ~= nil and out:match("%S") ~= nil
+end)()
+
+-- Answer a session's permission prompt: focus its terminal, then synthesize `keysym`
+-- (Claude Code reads a real key, so we let the WM settle focus before sending it).
+-- Falls back to a blind window-targeted send if we couldn't focus via awesome.
+local function answer_session(sessionId, keysym)
+  local winid = (sessionId and sessionId ~= "") and read_window_id(sessionId) or nil
+  if not winid then return false end
+  if focus_window(winid) then
+    gears.timer.start_new(0.12, function()
+      awful.spawn({ "xdotool", "key", "--clearmodifiers", keysym })
+      return false
+    end)
+  else
+    awful.spawn({ "xdotool", "key", "--window", tostring(winid), "--clearmodifiers", keysym })
+  end
+  return true
+end
+
 local function notify(state)
   local project = cur.project and cur.project ~= "" and (" — " .. cur.project) or ""
   if state == "permission" and cfg.notify_permission then
-    naughty.notification {
+    local args = {
       title = "Claude Code",
       message = "Awaiting permission" .. project,
       urgency = "normal",
       icon = resting,
     }
+    -- Offer Yes/No only when we know which terminal to answer (window id captured at
+    -- SessionStart). Clicking focuses that terminal and presses the matching key.
+    local sid = cur.sessionId
+    if cfg.notify_permission_actions and has_xdotool and sid and sid ~= "" and read_window_id(sid) then
+      local yes = naughty.action { name = "Yes" }
+      local no = naughty.action { name = "No" }
+      yes:connect_signal("invoked", function() answer_session(sid, cfg.permission_yes_key) end)
+      no:connect_signal("invoked", function() answer_session(sid, cfg.permission_no_key) end)
+      args.actions = { yes, no }
+    end
+    naughty.notification(args)
   elseif state == "done" and cfg.notify_done then
     local dur = (turn_started > 0) and (os.time() - turn_started) or 0
     if dur >= cfg.done_min_seconds then
@@ -264,6 +340,27 @@ local function notify(state)
       }
       if cfg.sound_cmd then awful.spawn.with_shell(cfg.sound_cmd) end
     end
+  end
+end
+
+-- Notify when the Anthropic service goes down ("down" + description) and recovers ("up").
+local function notify_service(kind, description)
+  if not cfg.notify_service then return end
+  if kind == "down" then
+    naughty.notification {
+      title = "Claude Code",
+      message = "Claude service issue — " .. (description or "incident in progress"),
+      urgency = "critical",
+      icon = resting,
+    }
+    if cfg.sound_cmd then awful.spawn.with_shell(cfg.sound_cmd) end
+  elseif kind == "up" then
+    naughty.notification {
+      title = "Claude Code",
+      message = "Claude service back to normal",
+      urgency = "normal",
+      icon = resting,
+    }
   end
 end
 
@@ -320,6 +417,7 @@ local poll = gears.timer {
         label = (eff == "idle") and "" or (st.label or ""),
         startedAt = tonumber(st.startedAt) or 0,
         project = st.project or "",
+        sessionId = st.sessionId or "",
       }
     end
 
@@ -332,6 +430,30 @@ local poll = gears.timer {
     end
 
     apply()
+  end,
+}
+
+-- Poll the Anthropic Statuspage (async via curl, so the event loop never blocks). On a
+-- none<->incident transition we notify and refresh the widget; otherwise we just remember it.
+local service_poll = gears.timer {
+  timeout = cfg.service_poll_seconds,
+  call_now = true,
+  autostart = cfg.check_service and has_curl,
+  callback = function()
+    awful.spawn.easy_async(
+      { "curl", "-fsS", "--max-time", "5", cfg.service_url },
+      function(stdout)
+        local ok, t = pcall(json.decode, stdout)
+        if not ok or type(t) ~= "table" or type(t.status) ~= "table" then return end
+        local was_down = service_down()
+        service.indicator = t.status.indicator or "none"
+        service.description = t.status.description or ""
+        local now_down = service_down()
+        if now_down ~= was_down then
+          notify_service(now_down and "down" or "up", service.description)
+          apply()
+        end
+      end)
   end,
 }
 
@@ -370,7 +492,8 @@ local function read_session(id)
 end
 
 -- The X11 window hosting this session, captured by lifecycle.js at SessionStart.
-local function read_window_id(id)
+-- (forward-declared above so notify() can answer permission prompts.)
+function read_window_id(id)
   local f = io.open(sess_win_dir .. id, "r")
   if not f then return nil end
   local raw = f:read("*a"); f:close()
@@ -379,8 +502,8 @@ end
 
 -- Find the awesome client owning `winid` and jump to it (switch tag, unminimize, raise,
 -- focus). Returns true on success. terminator shares one pid across windows, so we match
--- on the exact X11 window id, not the pid.
-local function focus_window(winid)
+-- on the exact X11 window id, not the pid. (forward-declared above for notify().)
+function focus_window(winid)
   if not winid then return false end
   for _, c in ipairs(client.get()) do
     if c.window == winid then
@@ -469,6 +592,15 @@ local function build_menu_widget()
     font = beautiful.font_name .. "Bold 10",
     widget = wibox.widget.textbox,
   }
+  if cfg.check_service and service_down() then
+    local desc = (service.description ~= "" and (" — " .. service.description)) or ""
+    rows[#rows + 1] = wibox.widget {
+      markup = "<span foreground='" .. cfg.down .. "'>● Claude down" ..
+        gears.string.xml_escape(desc) .. "</span>",
+      font = beautiful.font_name .. "9",
+      widget = wibox.widget.textbox,
+    }
+  end
   if #ids == 0 then
     rows[#rows + 1] = wibox.widget {
       markup = "<span foreground='#888'><i>No active sessions</i></span>",
@@ -537,8 +669,12 @@ local function build_settings_menu()
         function() cfg.show_timer = not cfg.show_timer; save_settings(); apply() end },
       { check(cfg.notify_permission) .. "Notify on permission",
         function() cfg.notify_permission = not cfg.notify_permission; save_settings() end },
+      { check(cfg.notify_permission_actions) .. "Yes/No buttons on permission",
+        function() cfg.notify_permission_actions = not cfg.notify_permission_actions; save_settings() end },
       { check(cfg.notify_done) .. "Notify on done",
         function() cfg.notify_done = not cfg.notify_done; save_settings() end },
+      { check(cfg.notify_service) .. "Notify on Claude outage",
+        function() cfg.notify_service = not cfg.notify_service; save_settings() end },
     },
   }
 end

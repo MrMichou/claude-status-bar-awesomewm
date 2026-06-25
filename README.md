@@ -15,6 +15,8 @@ glance, whether Claude is working, waiting on you, or done._
 - **Thinking / working** — the icon animates, with a live `1m 1s` timer.
 - **Running a tool** — a short label (`Editing`, `Reading`, `Running command`, …).
 - **Awaiting permission** — a paused amber dot (no timer).
+- **Claude service down** — a red dot + "Claude down" with the incident description
+  when the [Anthropic Statuspage](https://status.claude.com) reports an outage.
 - **Idle / done** — rests on a static icon.
 - **Active-sessions menu** — click the widget (or bind a key) for a popup listing
   each running Claude Code session: project, current state, and elapsed time.
