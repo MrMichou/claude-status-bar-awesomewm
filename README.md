@@ -1,5 +1,7 @@
 ## Claude Status Bar — awesomewm
 
+[![CI](https://github.com/MrMichou/claude-status-bar-awesomewm/actions/workflows/ci.yml/badge.svg)](https://github.com/MrMichou/claude-status-bar-awesomewm/actions/workflows/ci.yml)
+
 A tiny [awesomewm](https://awesomewm.org/) wibar widget that shows **Claude Code's
 live status** on Linux: an animated icon while Claude is thinking or running a tool,
 an amber dot when it's awaiting your permission, the elapsed time of the current
@@ -57,6 +59,29 @@ the widget reads the transcript tail for the `interrupted by user` marker (with 
 
 The hook layer (`hooks/update.js`, `hooks/lifecycle.js`) is cross-platform; the
 macOS-only app-launch is guarded behind `process.platform === "darwin"`.
+
+## Development
+
+Two test suites, run in CI on every push and PR (`.github/workflows/ci.yml`):
+
+- **JS hooks** — [Vitest](https://vitest.dev) exercises the real hook scripts in a
+  subprocess with a throwaway `$HOME`, so nothing touches your `~/.claude`. Covers the
+  event→state mapping, session tracking, and the `settings.json` merge/strip logic.
+
+  ```sh
+  npm install
+  npm test
+  ```
+
+- **Lua widget** — [busted](https://lunarmodules.github.io/busted/) specs for the pure
+  `json.lua` decoder, plus [luacheck](https://github.com/lunarmodules/luacheck) linting
+  of the widget.
+
+  ```sh
+  luarocks install busted luacheck
+  busted
+  luacheck linux/ spec/
+  ```
 
 ## Trademark / not affiliated
 

@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  js:
+    name: JS hooks (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  lua:
+    name: Lua widget (busted + luacheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Lua toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.4 luarocks
+          sudo luarocks install busted
+          sudo luarocks install luacheck
+      - name: Lint
+        run: luacheck linux/ spec/
+      - name: Test
+        run: busted
