@@ -132,10 +132,16 @@ local label = wibox.widget {
   font = beautiful.font_name .. "Medium 10",
   widget = wibox.widget.textbox,
 }
+-- The crab sits a touch high in its slot; nudge it down so it lines up better.
+local icon_slot = (cfg.style == "crab") and wibox.widget {
+  icon,
+  top = dpi(4),
+  widget = wibox.container.margin,
+} or icon
 local root = wibox.widget {
   {
     {
-      icon,
+      icon_slot,
       label,
       spacing = dpi(6),
       layout = wibox.layout.fixed.horizontal,
