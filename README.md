@@ -29,7 +29,8 @@ Set `cfg.style` at the top of `linux/awesomewm/claude_status/init.lua`:
 
 ## Requirements
 
-- awesomewm (v4.x) with `lgi` (cairo bindings, normally bundled)
+- awesomewm **4.3+** with `lgi` (cairo bindings, normally bundled) — developed on
+  `awesome v4.3-1700-gcd36f9023` (git-master, ≈4.4-dev, Lua 5.4.8, API level 4)
 - [Claude Code](https://claude.com/claude-code) (CLI or Desktop)
 - Node.js (used by the hook scripts)
 

@@ -10,11 +10,16 @@ timer while Claude works, an amber dot while awaiting permission, and a resting
 logo when idle. Optional `naughty` notifications fire on permission requests and
 turn completion.
 
-<sub>Tested on Awesome v4.3.</sub>
+<sub>Developed and tested on <code>awesome v4.3-1700-gcd36f9023</code> — a git-master
+build (≈4.4-dev), compiled against Lua 5.4.8, API level 4. Should work on any
+Awesome 4.3+ (it uses <code>awful.keyboard.append_global_keybindings</code>,
+<code>awful.popup</code>, and <code>lgi.cairo</code>, all available since 4.3).</sub>
 
 ## Requirements
 
-- awesomewm (v4.x) with `lgi` (the cairo bindings, normally bundled with Awesome)
+- awesomewm **4.3+** (tested on a git-master build; uses `awful.popup` and
+  `append_global_keybindings`, both 4.3+) with `lgi` (the cairo bindings, normally
+  bundled with Awesome)
 - Node.js (the Claude Code hooks use it — same as macOS)
 - Claude Code (CLI or Desktop)
 
