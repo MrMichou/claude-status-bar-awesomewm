@@ -80,7 +80,9 @@ local function load_frames()
 end
 
 local frames = load_frames()
-local resting = tint(frames_dir .. "logo.png", cfg.brand) or (frames[1])
+-- Resting icon: the crab style rests on a static crab frame (stays on-brand); the
+-- spark style rests on the tinted Claude logo, like the macOS app.
+local resting = (cfg.style == "crab") and frames[1] or (tint(frames_dir .. "logo.png", cfg.brand) or frames[1])
 local dot = make_dot(cfg.amber, cfg.icon_size)
 local fps = FPS[cfg.style] or 9
 
