@@ -3,6 +3,11 @@
 All notable changes to Claude Status Bar are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Click a session in the menu to jump to its window** (awesomewm/Linux). The `SessionStart` hook now records the X11 window where `claude` was launched (via `_NET_ACTIVE_WINDOW`), and rows with a known window show a `↗` hint and become clickable — clicking switches to that window's tag, unminimizes, raises and focuses it. Window matching is by exact X11 window id, so it works with terminals like terminator that share one process across multiple windows.
+
 ## [0.2.0] - 2026-06-25
 
 ### Added

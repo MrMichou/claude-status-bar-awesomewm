@@ -22,6 +22,8 @@ Awesome 4.3+ (it uses <code>awful.keyboard.append_global_keybindings</code>,
   bundled with Awesome)
 - Node.js (the Claude Code hooks use it — same as macOS)
 - Claude Code (CLI or Desktop)
+- `xprop` (from `xorg-xprop`) — optional, only for click-to-jump-to-window; the menu
+  works without it, sessions just won't be clickable
 
 ## Install
 
@@ -89,6 +91,8 @@ local claude_status = require("ui.bar.widgets.claude_status")
 
 - **Left click** — toggle the **active-sessions popup**: every running Claude Code
   session with its project name, current state (colored dot + label) and elapsed time.
+  A session whose window is known shows a `↗` hint and is **clickable** — clicking it
+  jumps to that terminal window (switches tag, unminimizes, raises and focuses it).
 - **Right click** — the **settings menu**: pick the animation style (Crab / Spark /
   Claude Code glyphs), toggle the timer, and toggle the permission/done notifications.
   Picks are persisted to `~/.claude/statusbar/widget.json` and override the `cfg`
@@ -107,7 +111,11 @@ end, { description = "Claude sessions", group = "launcher" })
 The list is built from the session markers in `~/.claude/statusbar/sessions.d/`,
 enriched with per-session state written to `~/.claude/statusbar/sessions-state/`.
 Both are maintained by the hooks (`update.js` writes, `lifecycle.js` cleans up on
-`SessionEnd`).
+`SessionEnd`). The clickable-window id lives in `~/.claude/statusbar/sessions-win/`,
+captured by `lifecycle.js` at `SessionStart` from `_NET_ACTIVE_WINDOW` (via `xprop`) —
+the terminal where `claude` was launched is the focused window at that moment. Sessions
+started before this feature existed have no window id and simply aren't clickable until
+their next start.
 
 ## Configuration
 

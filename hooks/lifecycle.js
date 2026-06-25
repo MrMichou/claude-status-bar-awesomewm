@@ -13,12 +13,30 @@ const EXEC = "ClaudeStatusBar";
 const dir = path.join(os.homedir(), ".claude", "statusbar");
 const sessDir = path.join(dir, "sessions.d");
 const stateDir = path.join(dir, "sessions-state"); // per-session state.json files (widget menu)
+const winDir = path.join(dir, "sessions-win"); // per-session X11 window id (Linux "jump to window")
 const event = process.argv[2];
 
 fs.mkdirSync(sessDir, { recursive: true });
 
 const running = () => { try { cp.execSync(`pgrep -x ${EXEC}`, { stdio: "ignore" }); return true; } catch { return false; } };
 const safeId = (s) => String(s || "").replace(/[^A-Za-z0-9_.-]/g, "").slice(0, 64) || "unknown";
+
+// Linux/X11: remember which window hosts this session so the widget menu can jump to it.
+// At SessionStart the terminal where `claude` was launched is the focused window, so the
+// _NET_ACTIVE_WINDOW is that terminal. Stored as a decimal id matching awesome's c.window.
+// (terminator & friends share one PID across windows, so we key on the window id, not pid.)
+function captureWindow(id) {
+  if (process.platform === "darwin") return;
+  try {
+    const out = cp.execSync("xprop -root _NET_ACTIVE_WINDOW", { stdio: ["ignore", "pipe", "ignore"] }).toString();
+    const hex = out.match(/0x[0-9a-fA-F]+/);
+    if (!hex) return;
+    const wid = parseInt(hex[0], 16);
+    if (!wid) return;
+    fs.mkdirSync(winDir, { recursive: true });
+    fs.writeFileSync(path.join(winDir, id), String(wid));
+  } catch {}
+}
 
 let input = "", done = false;
 process.stdin.on("data", (d) => (input += d));
@@ -49,9 +67,13 @@ function run() {
         for (const f of fs.readdirSync(stateDir)) {
           if (!markers.has(f.replace(/\.json$/, ""))) fs.rmSync(path.join(stateDir, f), { force: true });
         }
+        for (const f of fs.readdirSync(winDir)) {
+          if (!markers.has(f)) fs.rmSync(path.join(winDir, f), { force: true });
+        }
       } catch {}
     }
     try { fs.writeFileSync(path.join(sessDir, id), ""); } catch {}
+    captureWindow(id);
     // Launching the app is macOS-only: on Linux the indicator is an always-running
     // awesomewm widget polling state.json, so there is nothing to spawn here.
     if (process.platform === "darwin") {
@@ -60,6 +82,7 @@ function run() {
   } else if (event === "end") {
     try { fs.rmSync(path.join(sessDir, id), { force: true }); } catch {}
     try { fs.rmSync(path.join(stateDir, id + ".json"), { force: true }); } catch {}
+    try { fs.rmSync(path.join(winDir, id), { force: true }); } catch {}
   }
   process.exit(0);
 }

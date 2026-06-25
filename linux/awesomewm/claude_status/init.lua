@@ -339,6 +339,7 @@ local poll = gears.timer {
 local statusbar_dir = os.getenv("HOME") .. "/.claude/statusbar/"
 local marker_dir = statusbar_dir .. "sessions.d/"
 local sess_state_dir = statusbar_dir .. "sessions-state/"
+local sess_win_dir = statusbar_dir .. "sessions-win/"
 local Gio = lgi.Gio
 
 -- List a directory's entries; Gio first (no subprocess), falling back to `ls`.
@@ -368,6 +369,29 @@ local function read_session(id)
   return json.decode(raw)
 end
 
+-- The X11 window hosting this session, captured by lifecycle.js at SessionStart.
+local function read_window_id(id)
+  local f = io.open(sess_win_dir .. id, "r")
+  if not f then return nil end
+  local raw = f:read("*a"); f:close()
+  return tonumber((raw or ""):match("%d+"))
+end
+
+-- Find the awesome client owning `winid` and jump to it (switch tag, unminimize, raise,
+-- focus). Returns true on success. terminator shares one pid across windows, so we match
+-- on the exact X11 window id, not the pid.
+local function focus_window(winid)
+  if not winid then return false end
+  for _, c in ipairs(client.get()) do
+    if c.window == winid then
+      c.minimized = false
+      c:jump_to(false)
+      return true
+    end
+  end
+  return false
+end
+
 local function state_color(s)
   if s == "permission" then return cfg.amber
   elseif s == "thinking" or s == "tool" then return cfg.brand
@@ -380,12 +404,18 @@ local STATE_TEXT = {
   waiting = "Waiting", done = "Done", idle = "Idle",
 }
 
-local function session_row(info)
+-- Forward declaration so session_row's click handler can close the popup (the popup
+-- itself is created further down).
+local menu
+
+local function session_row(info, winid)
   local title = (info.project and info.project ~= "") and info.project or "session"
   local sub = info.label
   if sub == nil or sub == "" then sub = STATE_TEXT[info.state] or info.state or "" end
   if info.startedAt and info.startedAt > 0 then sub = sub .. "  ·  " .. fmt_elapsed(info.startedAt) end
-  return wibox.widget {
+  -- Rows with a known window get a hint glyph and become clickable to jump to it.
+  local hint = winid and " <span foreground='#666'>↗</span>" or ""
+  local row = wibox.widget {
     {
       {
         image = make_dot(state_color(info.state), dpi(12)),
@@ -395,7 +425,7 @@ local function session_row(info)
       },
       {
         {
-          markup = "<b>" .. gears.string.xml_escape(title) .. "</b>",
+          markup = "<b>" .. gears.string.xml_escape(title) .. "</b>" .. hint,
           font = beautiful.font_name .. "Medium 10",
           widget = wibox.widget.textbox,
         },
@@ -412,6 +442,17 @@ local function session_row(info)
     margins = dpi(4),
     widget = wibox.container.margin,
   }
+  if winid then
+    local bg = wibox.container.background(row)
+    bg:connect_signal("mouse::enter", function() bg.bg = "#ffffff15" end)
+    bg:connect_signal("mouse::leave", function() bg.bg = nil end)
+    bg:buttons(gears.table.join(awful.button({}, 1, function()
+      if menu then menu.visible = false end
+      focus_window(winid)
+    end)))
+    return bg
+  end
+  return row
 end
 
 local function build_menu_widget()
@@ -435,7 +476,9 @@ local function build_menu_widget()
     }
   else
     for _, id in ipairs(ids) do
-      rows[#rows + 1] = session_row(read_session(id) or { state = "idle", project = "", label = "", startedAt = 0 })
+      rows[#rows + 1] = session_row(
+        read_session(id) or { state = "idle", project = "", label = "", startedAt = 0 },
+        read_window_id(id))
     end
   end
 
@@ -446,7 +489,7 @@ local function build_menu_widget()
   }
 end
 
-local menu = awful.popup {
+menu = awful.popup {
   widget = wibox.widget.textbox(""),
   ontop = true,
   visible = false,
