@@ -23,7 +23,7 @@ local dpi = beautiful.xresources.apply_dpi
 
 --==[ Config ]==----------------------------------------------------------------
 local cfg = {
-  style          = "crab",       -- "web" (Claude spark) or "crab"
+  style          = "crab",       -- "web" (Claude spark), "crab", or "code" (glyph spinner)
   brand          = "#d97757",    -- Anthropic orange, used to tint the alpha-mask frames
   amber          = "#f2bb2e",    -- "awaiting permission" dot
   icon_size      = dpi(18),
@@ -36,6 +36,8 @@ local cfg = {
   poll_seconds   = 0.4,
 }
 local FPS = { web = 9, crab = 12.5 }
+-- "code" style: Claude Code's terminal glyph spinner, tweened with a scale pulse.
+local CODE = { glyphs = { "✻", "✽", "✶", "✳", "✢" }, sub = 18, dip = 0.14, base_pt = 14, cycle = 3.8 }
 --==============================================================================
 
 local state_path = os.getenv("HOME") .. "/.claude/statusbar/state.json"
@@ -79,21 +81,33 @@ local function load_frames()
   return set
 end
 
-local frames = load_frames()
+local is_code = (cfg.style == "code")
+local frames = is_code and {} or load_frames()
 -- Resting icon: the crab style rests on a static crab frame (stays on-brand); the
 -- spark style rests on the tinted Claude logo, like the macOS app.
 local resting = (cfg.style == "crab") and frames[1] or (tint(frames_dir .. "logo.png", cfg.brand) or frames[1])
 local dot = make_dot(cfg.amber, cfg.icon_size)
-local fps = FPS[cfg.style] or 9
+local code_count = #CODE.glyphs * CODE.sub
+local fps = is_code and (code_count / CODE.cycle) or (FPS[cfg.style] or 9)
 
 --==[ Widgets ]==---------------------------------------------------------------
-local icon = wibox.widget {
-  image = resting,
-  resize = true,
-  forced_height = cfg.icon_size,
-  forced_width = cfg.icon_size,
-  widget = wibox.widget.imagebox,
-}
+-- The "code" style is text (a glyph), so its icon slot is a textbox; web/crab use an imagebox.
+local icon
+if is_code then
+  icon = wibox.widget {
+    align = "center", valign = "center",
+    forced_width = cfg.icon_size, forced_height = cfg.icon_size,
+    widget = wibox.widget.textbox,
+  }
+else
+  icon = wibox.widget {
+    image = resting,
+    resize = true,
+    forced_height = cfg.icon_size,
+    forced_width = cfg.icon_size,
+    widget = wibox.widget.imagebox,
+  }
+end
 local label = wibox.widget {
   font = beautiful.font_name .. "Medium 10",
   widget = wibox.widget.textbox,
@@ -126,12 +140,36 @@ local function fmt_elapsed(startedAt)
   return string.format("%ds", s)
 end
 
+-- "code" style rendering: pick the glyph for this frame and pulse its size.
+local function code_env(t)
+  if t < 0.30 then local u = t / 0.30; return u * u * (3 - 2 * u)
+  elseif t > 0.70 then local u = (1 - t) / 0.30; return u * u * (3 - 2 * u)
+  else return 1 end
+end
+local function set_code_icon(frame, color)
+  local i = math.floor(frame / CODE.sub) % #CODE.glyphs
+  local lt = (frame % CODE.sub + 0.5) / CODE.sub
+  local scale = CODE.dip + (1 - CODE.dip) * code_env(lt)
+  icon.font = beautiful.font_name .. string.format("%.1f", math.max(1, CODE.base_pt * scale))
+  icon.markup = string.format("<span color='%s'>%s</span>", color, CODE.glyphs[i + 1])
+end
+local function code_static(glyph, color)
+  icon.font = beautiful.font_name .. string.format("%.1f", CODE.base_pt)
+  icon.markup = string.format("<span color='%s'>%s</span>", color, glyph)
+end
+
 local anim_timer = gears.timer {
   timeout = 1 / fps,
   callback = function()
-    if not animating or #frames == 0 then return end
-    frame_i = frame_i % #frames + 1
-    icon.image = frames[frame_i]
+    if not animating then return end
+    if is_code then
+      frame_i = (frame_i + 1) % code_count
+      set_code_icon(frame_i, cfg.brand)
+    else
+      if #frames == 0 then return end
+      frame_i = frame_i % #frames + 1
+      icon.image = frames[frame_i]
+    end
   end,
 }
 
@@ -144,28 +182,37 @@ local function set_label(base, startedAt)
   label:set_text(text)
 end
 
+-- Show a non-animated icon for the current style. kind = "permission" | "rest".
+local function show_static(kind)
+  if is_code then
+    if kind == "permission" then code_static("●", cfg.amber) else code_static(CODE.glyphs[1], cfg.brand) end
+  else
+    icon.image = (kind == "permission") and dot or resting
+  end
+end
+
 local function apply()
   local s = cur.state
   local animate = (s == "thinking" or s == "tool")
 
   if animate then
     if not animating then animating = true; anim_timer:again() end
-    icon.image = frames[frame_i] or resting
+    if is_code then set_code_icon(frame_i, cfg.brand) else icon.image = frames[frame_i] or resting end
     local base = (cur.label ~= "" and cur.label) or (s == "tool" and "Working…" or "Thinking…")
     set_label(base, cur.startedAt)
     root.visible = true
   else
     animating = false; anim_timer:stop()
     if s == "permission" then
-      icon.image = dot
+      show_static("permission")
       set_label("Awaiting permission", 0)
       root.visible = true
     elseif s == "waiting" then
-      icon.image = resting
+      show_static("rest")
       set_label(cur.label, 0)
       root.visible = true
     else -- done / idle / unknown
-      icon.image = resting
+      show_static("rest")
       set_label("", 0)
       root.visible = not cfg.hide_when_idle
     end
@@ -202,6 +249,36 @@ local function read_state()
   return json.decode(raw)
 end
 
+-- Last non-empty line of a (possibly large) file, read by tailing ~8KB.
+local function last_line(path)
+  local f = io.open(path, "rb")
+  if not f then return nil end
+  local size = f:seek("end")
+  f:seek("set", size > 8192 and size - 8192 or 0)
+  local data = f:read("*a"); f:close()
+  if not data then return nil end
+  local last
+  for line in data:gmatch("[^\n]+") do if line:match("%S") then last = line end end
+  return last
+end
+
+-- Interrupt (Esc) and permission-deny fire NO hook, so state.json freezes on a live
+-- state. Recover the way the macOS app does: detect the transcript's "interrupted by
+-- user" marker, with an absolute age safety net. Returns the effective state.
+local function effective_state(st)
+  local s = st.state or "idle"
+  if s == "thinking" or s == "tool" or s == "permission" then
+    local age = os.time() - (tonumber(st.ts) or 0)
+    if age > 900 then return "idle" end
+    local tr = st.transcript
+    if tr and tr ~= "" then
+      local l = last_line(tr)
+      if l and l:find("interrupted by user", 1, true) then return "idle" end
+    end
+  end
+  return s
+end
+
 local poll = gears.timer {
   timeout = cfg.poll_seconds,
   call_now = true,
@@ -211,9 +288,10 @@ local poll = gears.timer {
     if not st then
       cur = { state = "idle", label = "", startedAt = 0 }
     else
+      local eff = effective_state(st)
       cur = {
-        state = st.state or "idle",
-        label = st.label or "",
+        state = eff,
+        label = (eff == "idle") and "" or (st.label or ""),
         startedAt = tonumber(st.startedAt) or 0,
         project = st.project or "",
       }

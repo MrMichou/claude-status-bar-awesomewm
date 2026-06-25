@@ -102,7 +102,7 @@ Edit the `cfg` table at the top of `claude_status/init.lua`:
 
 | Key | Default | Description |
 |---|---|---|
-| `style` | `"web"` | `"web"` (Claude spark) or `"crab"` (pixel-art crab) |
+| `style` | `"crab"` | `"crab"` (pixel-art crab), `"web"` (Claude spark), or `"code"` (terminal glyph spinner ✻✽✶✳✢) |
 | `brand` | `"#d97757"` | Tint color for the spark / logo (alpha-mask frames) |
 | `amber` | `"#f2bb2e"` | "Awaiting permission" dot color |
 | `icon_size` | `dpi(18)` | Icon height/width |
@@ -121,7 +121,13 @@ The widget polls that file every `poll_seconds`, drives a cairo-tinted PNG frame
 animation while Claude is thinking / running a tool, swaps to an amber dot for
 `permission`, shows the elapsed time, and fires `naughty` notifications on state
 transitions. The `web`/`logo` PNGs are alpha masks tinted at load time (the same
-approach as the macOS app); the `crab` frames are full color.
+approach as the macOS app); the `crab` frames are full color; the `code` style is
+a pango-rendered glyph spinner (no images).
+
+Interrupting a turn (Esc) or denying a permission fires **no** hook, so `state.json`
+freezes on a live state. Like the macOS app, the widget recovers by detecting the
+`interrupted by user` marker at the tail of the session transcript, with an absolute
+15-minute age safety net — so it never stays stuck animating or on the amber dot.
 
 ## Troubleshooting
 
