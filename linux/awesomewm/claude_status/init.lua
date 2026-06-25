@@ -402,7 +402,8 @@ local function effective_state(st)
   return s
 end
 
-local poll = gears.timer {
+-- Autostarts itself; we keep no reference to the timer.
+gears.timer {
   timeout = cfg.poll_seconds,
   call_now = true,
   autostart = true,
