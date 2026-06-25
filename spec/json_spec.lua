@@ -38,8 +38,10 @@ describe("json.decode", function()
     end)
 
     it("decodes \\uXXXX (BMP) into UTF-8", function()
-      -- U+2026 HORIZONTAL ELLIPSIS, as used in the "Thinking…" label
-      assert.are.equal("\xE2\x80\xA6", json.decode([["…"]]))
+      -- U+2026 HORIZONTAL ELLIPSIS, as used in the "Thinking…" label.
+      -- string.char (not "\xNN") so the expectation is portable across Lua 5.1+/LuaJIT.
+      local ellipsis = string.char(0xE2, 0x80, 0xA6)
+      assert.are.equal(ellipsis, json.decode([["…"]]))
     end)
   end)
 
