@@ -8,7 +8,7 @@ turn, and a click-to-open menu listing every active session.
 _Built so you can tab away during a long "thinking" stretch and still see, at a
 glance, whether Claude is working, waiting on you, or done._
 
-> Linux/awesomewm port of the macOS **Claude Status Bar** by **[@mickces](https://x.com/mickces)** ([m1ckc3s/claude-status-bar](https://github.com/m1ckc3s/claude-status-bar)). The original macOS app source lives in `Sources/`; this repo adds the Linux widget under `linux/awesomewm/` and makes the hook layer cross-platform. All credit for the original idea, design, and artwork goes to the author.
+> Linux/awesomewm port of the macOS **Claude Status Bar** by **[@mickces](https://x.com/mickces)** ([m1ckc3s/claude-status-bar](https://github.com/m1ckc3s/claude-status-bar)). This fork is Linux-focused: the macOS app itself isn't included, only the animation frames it originated (`Sources/*.swift`, decoded into PNGs by `tools/extract-frames.js`). All credit for the original idea, design, and artwork goes to the author — see the [original repo](https://github.com/m1ckc3s/claude-status-bar) for the macOS app.
 
 ## What it shows
 
