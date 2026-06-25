@@ -12,6 +12,7 @@ const BUNDLE_ID = "com.local.claudestatusbar";
 const EXEC = "ClaudeStatusBar";
 const dir = path.join(os.homedir(), ".claude", "statusbar");
 const sessDir = path.join(dir, "sessions.d");
+const stateDir = path.join(dir, "sessions-state"); // per-session state.json files (widget menu)
 const event = process.argv[2];
 
 fs.mkdirSync(sessDir, { recursive: true });
@@ -32,13 +33,33 @@ function run() {
   id = safeId(id);
 
   if (event === "start") {
-    // If the app isn't running, any leftover session files are stale (e.g. a prior
-    // crash) — clear them so the count starts honest.
-    if (!running()) { try { for (const f of fs.readdirSync(sessDir)) fs.rmSync(path.join(sessDir, f), { force: true }); } catch {} }
+    // macOS only: the app process is the liveness signal, so if it isn't running any
+    // leftover markers are stale (prior crash) — clear them so the count starts honest.
+    // On Linux the indicator is the always-running awesomewm widget, so there is no
+    // such "app restarted" moment; wiping here would drop other live sessions' markers.
+    if (process.platform === "darwin") {
+      if (!running()) {
+        try { for (const f of fs.readdirSync(sessDir)) fs.rmSync(path.join(sessDir, f), { force: true }); } catch {}
+        try { for (const f of fs.readdirSync(stateDir)) fs.rmSync(path.join(stateDir, f), { force: true }); } catch {}
+      }
+    } else {
+      // Crash-safety: drop per-session state files that no longer have a live marker.
+      try {
+        const markers = new Set(fs.readdirSync(sessDir));
+        for (const f of fs.readdirSync(stateDir)) {
+          if (!markers.has(f.replace(/\.json$/, ""))) fs.rmSync(path.join(stateDir, f), { force: true });
+        }
+      } catch {}
+    }
     try { fs.writeFileSync(path.join(sessDir, id), ""); } catch {}
-    cp.spawn("open", ["-g", "-b", BUNDLE_ID], { stdio: "ignore", detached: true }).unref();
+    // Launching the app is macOS-only: on Linux the indicator is an always-running
+    // awesomewm widget polling state.json, so there is nothing to spawn here.
+    if (process.platform === "darwin") {
+      cp.spawn("open", ["-g", "-b", BUNDLE_ID], { stdio: "ignore", detached: true }).unref();
+    }
   } else if (event === "end") {
     try { fs.rmSync(path.join(sessDir, id), { force: true }); } catch {}
+    try { fs.rmSync(path.join(stateDir, id + ".json"), { force: true }); } catch {}
   }
   process.exit(0);
 }

@@ -97,4 +97,18 @@ process.stdin.on("end", () => {
     fs.writeFileSync(tmp, JSON.stringify(out));
     fs.renameSync(tmp, statePath);
   } catch {}
+
+  // Per-session state, kept in a SEPARATE dir from sessions.d/ (whose plain file count
+  // the macOS app uses for liveness — adding .json there would inflate it). Powers the
+  // Linux widget's "active sessions" menu; cleaned up by lifecycle.js on SessionEnd.
+  if (sid) {
+    try {
+      const stateDir = path.join(dir, "sessions-state");
+      fs.mkdirSync(stateDir, { recursive: true });
+      const sp = path.join(stateDir, sid + ".json");
+      const stmp = sp + "." + process.pid + ".tmp";
+      fs.writeFileSync(stmp, JSON.stringify(out));
+      fs.renameSync(stmp, sp);
+    } catch {}
+  }
 });

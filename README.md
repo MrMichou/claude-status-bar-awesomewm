@@ -79,6 +79,10 @@ Installs the hooks (status + open/close lifecycle) automatically from inside Cla
 
 The plugin installs the hooks but not the app itself, so drag **Claude Status Bar** into Applications once (from the DMG). The plugin launches it automatically on session start.
 
+### Linux (awesomewm)
+
+Not on macOS? There's a Linux port that runs as an [awesomewm](https://awesomewm.org/) wibar widget, reusing the same cross-platform hooks. See **[docs/linux-awesomewm.md](docs/linux-awesomewm.md)**.
+
 ## How it works
 
 The app is stateless. Claude Code hooks write the current status to `~/.claude/statusbar/state.json`; the app polls that file every 0.4s and renders the icon and label. `SessionStart` launches it; it self-quits once the Claude desktop app is closed and no Claude Code session is active (each active session is a file under `~/.claude/statusbar/sessions.d/`).
