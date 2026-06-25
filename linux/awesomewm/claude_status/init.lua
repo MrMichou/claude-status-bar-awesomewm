@@ -23,7 +23,7 @@ local dpi = beautiful.xresources.apply_dpi
 
 --==[ Config ]==----------------------------------------------------------------
 local cfg = {
-  style          = "web",        -- "web" (Claude spark) or "crab"
+  style          = "crab",       -- "web" (Claude spark) or "crab"
   brand          = "#d97757",    -- Anthropic orange, used to tint the alpha-mask frames
   amber          = "#f2bb2e",    -- "awaiting permission" dot
   icon_size      = dpi(18),
