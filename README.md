@@ -28,6 +28,10 @@ glance, whether Claude is working, waiting on you, or done._
 Set `cfg.style` at the top of `linux/awesomewm/claude_status/init.lua`:
 
 - **`crab`** (default) — a pixel-art Clawd crab that scuttles while Claude works.
+- **`clawd`** — pixel-crab emotes with a **different animation per state**: a *thinking*
+  loop while Claude thinks, a *typing* loop while it runs tools, and the original crab
+  resting (with an occasional idle stroll) otherwise. Emote artwork from
+  [xixicc186/clawd-emotes-skill](https://github.com/xixicc186/clawd-emotes-skill).
 - **`web`** — the Claude "morph" spark.
 - **`code`** — the terminal glyph spinner `✻ ✽ ✶ ✳ ✢`.
 

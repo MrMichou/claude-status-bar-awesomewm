@@ -47,7 +47,14 @@ local cfg = {
   service_poll_seconds = 60,     -- network is slow; poll far less often than the local state
   notify_service = true,
 }
-local FPS = { web = 9, crab = 12.5 }
+local FPS = { web = 9, crab = 12.5, clawd = 14 }
+-- "clawd" style: a pixel crab with a *different* loop per state (the emote set from
+-- github.com/xixicc186/clawd-emotes-skill, exported to PNG frames). Unlike the single-loop
+-- styles, the displayed animation switches with Claude's state — see current_frames().
+local CLAWD = { thinking = "clawd/thinking", tool = "clawd/typing", rest = "clawd/walk" }
+-- The thinking/typing emotes read small at the resting icon size, so clawd renders them a
+-- little larger while Claude works (the rest crab keeps the normal size). dpi() applied below.
+local CLAWD_WORK_SIZE = 30
 -- "code" style: Claude Code's terminal glyph spinner, tweened with a scale pulse.
 local CODE = { glyphs = { "✻", "✽", "✶", "✳", "✢" }, sub = 18, dip = 0.14, base_pt = 14, cycle = 3.8 }
 --==============================================================================
@@ -102,26 +109,56 @@ local function make_dot(color, size)
   return out
 end
 
--- Load + (for masks) tint the frame sets once.
-local function load_frames()
+-- Load + (optionally) tint a numbered frame set from `frames_dir/subdir/NN.png`.
+local function load_frame_dir(subdir, tint_it)
   local set = {}
   local i = 0
   while true do
-    local p = string.format("%s%s/%02d.png", frames_dir, cfg.style, i)
+    local p = string.format("%s%s/%02d.png", frames_dir, subdir, i)
     local f = io.open(p, "r")
     if not f then break end
     f:close()
-    set[#set + 1] = (cfg.style == "web") and tint(p, cfg.brand) or gears.surface.load_uncached(p)
+    set[#set + 1] = tint_it and tint(p, cfg.brand) or gears.surface.load_uncached(p)
     i = i + 1
   end
   return set
 end
 
 local is_code = (cfg.style == "code")
-local frames = is_code and {} or load_frames()
--- Resting icon: the crab style rests on a static crab frame (stays on-brand); the
--- spark style rests on the tinted Claude logo, like the macOS app.
-local resting = (cfg.style == "crab") and frames[1] or (tint(frames_dir .. "logo.png", cfg.brand) or frames[1])
+local is_clawd = (cfg.style == "clawd")
+
+-- For clawd we hold one loop per state; the other image styles use a single `frames` set.
+local clawd_sets
+local frames
+if is_code then
+  frames = {}
+elseif is_clawd then
+  clawd_sets = {
+    thinking = load_frame_dir(CLAWD.thinking, false),
+    tool     = load_frame_dir(CLAWD.tool, false),
+    rest     = load_frame_dir(CLAWD.rest, false),
+  }
+  frames = clawd_sets.thinking -- default/fallback set (the thinking emote)
+else
+  frames = load_frame_dir(cfg.style, cfg.style == "web")
+end
+
+-- Resting icon: the crab styles rest on a static frame (stay on-brand); the spark style
+-- rests on the tinted Claude logo, like the macOS app.
+-- The clawd style poses on the original pixel crab frames when idle; kept at module scope
+-- so the idle "fidget" (a periodic walk-through) can replay them. nil for other styles.
+local clawd_rest_frames = is_clawd and load_frame_dir("crab", false) or nil
+
+local resting
+if is_clawd then
+  -- At rest the clawd style poses on the original pixel crab frame (never clipped), the way
+  -- the macOS app rests on its logo; it only animates (thinking/typing) while Claude works.
+  resting = (clawd_rest_frames and clawd_rest_frames[1]) or clawd_sets.thinking[1]
+elseif cfg.style == "crab" then
+  resting = frames[1]
+else
+  resting = tint(frames_dir .. "logo.png", cfg.brand) or frames[1]
+end
 local dot = make_dot(cfg.amber, cfg.icon_size)
 local down_dot = make_dot(cfg.down, cfg.icon_size)
 local code_count = #CODE.glyphs * CODE.sub
@@ -149,10 +186,10 @@ local label = wibox.widget {
   font = beautiful.font_name .. "Medium 10",
   widget = wibox.widget.textbox,
 }
--- The crab sits a touch high in its slot; nudge it down so it lines up better.
-local icon_slot = (cfg.style == "crab") and wibox.widget {
+-- The crab styles sit a touch high in their slot; nudge them down so they line up better.
+local icon_slot = (cfg.style == "crab" or is_clawd) and wibox.widget {
   icon,
-  top = dpi(4),
+  top = is_clawd and dpi(6) or dpi(4),
   widget = wibox.container.margin,
 } or icon
 local root = wibox.widget {
@@ -175,6 +212,16 @@ local frame_i = 1
 local animating = false
 local prev_state = nil
 local turn_started = 0 -- remembered while >0 so we know the turn length at "done"
+local active_set = nil -- the clawd loop currently on screen; restart frame_i when it changes
+local fidgeting = false -- clawd only: an idle "fidget" walk is currently playing (owns the icon)
+
+-- The frame set to animate for the current state. Static styles always return `frames`;
+-- the clawd style swaps loops so the animation tracks what Claude is doing.
+local function current_frames()
+  if not is_clawd then return frames end
+  if cur.state == "tool" then return clawd_sets.tool end
+  return clawd_sets.thinking -- thinking (idle/done don't animate; they rest on the crab)
+end
 
 -- Anthropic service health from the Statuspage; "none" (or "") means all systems operational.
 local service = { indicator = "none", description = "" }
@@ -213,9 +260,10 @@ local anim_timer = gears.timer {
       frame_i = (frame_i + 1) % code_count
       set_code_icon(frame_i, cfg.brand)
     else
-      if #frames == 0 then return end
-      frame_i = frame_i % #frames + 1
-      icon.image = frames[frame_i]
+      local set = current_frames()
+      if #set == 0 then return end
+      frame_i = frame_i % #set + 1
+      icon.image = set[frame_i]
     end
   end,
 }
@@ -234,6 +282,7 @@ local function show_static(kind)
   if is_code then
     if kind == "permission" then code_static("●", cfg.amber) else code_static(CODE.glyphs[1], cfg.brand) end
   else
+    if kind == "rest" and fidgeting then return end -- the idle fidget owns the icon mid-walk
     icon.image = (kind == "permission") and dot or resting
   end
 end
@@ -250,16 +299,28 @@ local function apply()
   end
 
   local s = cur.state
+  -- clawd swaps between its thinking/typing loops while Claude works, but (like the other
+  -- styles) it rests on a static icon when idle — see current_frames() and `resting`.
   local animate = (s == "thinking" or s == "tool")
 
   if animate then
+    local set = current_frames()
+    if set ~= active_set then active_set = set; frame_i = 1 end -- restart on a loop switch
     if not animating then animating = true; anim_timer:again() end
-    if is_code then set_code_icon(frame_i, cfg.brand) else icon.image = frames[frame_i] or resting end
+    if is_clawd then
+      icon.forced_width = dpi(CLAWD_WORK_SIZE); icon.forced_height = dpi(CLAWD_WORK_SIZE)
+      icon_slot.top = dpi(2) -- the bigger working emote needs the slot's headroom back
+    end
+    if is_code then set_code_icon(frame_i, cfg.brand) else icon.image = set[frame_i] or resting end
     local base = (cur.label ~= "" and cur.label) or (s == "tool" and "Working…" or "Thinking…")
     set_label(base, cur.startedAt)
     root.visible = true
   else
     animating = false; anim_timer:stop()
+    if is_clawd then
+      icon.forced_width = cfg.icon_size; icon.forced_height = cfg.icon_size
+      icon_slot.top = dpi(6) -- rest crab sits low again
+    end
     if s == "permission" then
       show_static("permission")
       set_label("Awaiting permission", 0)
@@ -274,6 +335,52 @@ local function apply()
       root.visible = not cfg.hide_when_idle
     end
   end
+end
+
+-- Idle "fidget" (clawd only): every so often the resting crab takes a short walk using the
+-- original pixel-crab frames, then settles back onto its static pose. Adds a little life at
+-- rest without animating non-stop. Only runs while genuinely idle (not working / permission /
+-- service outage).
+local CLAWD_FIDGET = { min = 9, max = 22, laps = 1 } -- seconds between walks; laps per walk
+if is_clawd and clawd_rest_frames and #clawd_rest_frames > 0 then
+  math.randomseed(os.time())
+  local tick = 1 / (FPS.crab or 12.5)
+  local fidget_i, fidget_laps, wait_ticks = 0, 0, 0
+  local function reschedule()
+    wait_ticks = math.floor(math.random(CLAWD_FIDGET.min, CLAWD_FIDGET.max) / tick)
+  end
+  local function at_rest()
+    return not animating and not (cfg.check_service and service_down())
+      and (cur.state == "idle" or cur.state == "done" or cur.state == "waiting")
+  end
+  reschedule()
+  gears.timer {
+    timeout = tick,
+    autostart = true,
+    callback = function()
+      if not at_rest() then
+        if fidgeting then fidgeting = false; fidget_laps = 0; icon.image = resting end
+        return
+      end
+      if fidgeting then
+        fidget_i = fidget_i + 1
+        if fidget_i > #clawd_rest_frames then
+          fidget_i = 1
+          fidget_laps = fidget_laps + 1
+          if fidget_laps >= CLAWD_FIDGET.laps then
+            fidgeting = false; fidget_laps = 0
+            icon.image = resting
+            reschedule()
+            return
+          end
+        end
+        icon.image = clawd_rest_frames[fidget_i]
+      else
+        wait_ticks = wait_ticks - 1
+        if wait_ticks <= 0 then fidgeting = true; fidget_i = 1; fidget_laps = 0 end
+      end
+    end,
+  }
 end
 
 -- Defined in the sessions section further down; notify() (below) needs them to turn a
@@ -664,6 +771,7 @@ local function build_settings_menu()
     items = {
       { "Animation style", {
         { bullet(cfg.style == "crab") .. "Crab walking",      function() set_style("crab") end },
+        { bullet(cfg.style == "clawd") .. "Clawd emotes",     function() set_style("clawd") end },
         { bullet(cfg.style == "web") .. "Claude spark",       function() set_style("web") end },
         { bullet(cfg.style == "code") .. "Claude Code glyphs", function() set_style("code") end },
       } },
