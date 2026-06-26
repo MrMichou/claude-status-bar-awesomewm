@@ -100,6 +100,26 @@ local state_path = os.getenv("HOME") .. "/.claude/statusbar/state.json"
 local module_dir = (debug.getinfo(1, "S").source:match("^@(.*/)")) or "./"
 local frames_dir = module_dir .. "frames/"
 
+-- No hook ever writes a global "idle" state: state.json keeps its last value after a turn
+-- ("done"/"permission"/…), so it can't tell us "no session is open". The session markers in
+-- sessions.d/ can — the lifecycle hook drops one at SessionStart and removes it at SessionEnd.
+-- An empty dir means nothing is running, which drives the idle (sleeping) emote below.
+local sessions_marker_dir = os.getenv("HOME") .. "/.claude/statusbar/sessions.d/"
+local function open_session_count()
+  local n = 0
+  pcall(function()
+    local Gio = lgi.Gio
+    local en = Gio.File.new_for_path(sessions_marker_dir)
+      :enumerate_children("standard::name", Gio.FileQueryInfoFlags.NONE)
+    if not en then return end
+    while true do
+      local info = en:next_file(); if not info then break end
+      if not info:get_name():match("%.") then n = n + 1 end -- markers are bare ids (skip .tmp/.json)
+    end
+  end)
+  return n
+end
+
 -- Paint `color` through an alpha-mask PNG -> a colored cairo surface (the macOS tint).
 local function tint(path, color)
   local mask = gears.surface.load_uncached(path)
@@ -564,6 +584,11 @@ gears.timer {
         project = st.project or "",
         sessionId = st.sessionId or "",
       }
+    end
+
+    -- No session open at all → idle, so the crab sleeps (the stale state.json can't say this).
+    if open_session_count() == 0 then
+      cur = { state = "idle", label = "", startedAt = 0, project = "", sessionId = "" }
     end
 
     if cur.startedAt > 0 then turn_started = cur.startedAt end
