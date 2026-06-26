@@ -51,10 +51,18 @@ local FPS = { web = 9, crab = 12.5, clawd = 14 }
 -- "clawd" style: a pixel crab with a *different* loop per state (the emote set from
 -- github.com/xixicc186/clawd-emotes-skill, exported to PNG frames). Unlike the single-loop
 -- styles, the displayed animation switches with Claude's state — see current_frames().
-local CLAWD = { thinking = "clawd/thinking", tool = "clawd/typing", rest = "clawd/walk" }
+-- Emotes from the same set also cover two states the other styles render statically: an
+-- attentive "listening" crab while awaiting permission, and a "birthday" celebration at done.
+local CLAWD = {
+  thinking   = "clawd/thinking",
+  tool       = "clawd/typing",
+  rest       = "clawd/walk",
+  permission = "clawd/listening",
+  done       = "clawd/birthday",
+}
 -- The thinking/typing emotes read small at the resting icon size, so clawd renders them a
 -- little larger while Claude works (the rest crab keeps the normal size). dpi() applied below.
-local CLAWD_WORK_SIZE = 30
+local CLAWD_WORK_SIZE = 40
 -- "code" style: Claude Code's terminal glyph spinner, tweened with a scale pulse.
 local CODE = { glyphs = { "✻", "✽", "✶", "✳", "✢" }, sub = 18, dip = 0.14, base_pt = 14, cycle = 3.8 }
 --==============================================================================
@@ -134,9 +142,11 @@ if is_code then
   frames = {}
 elseif is_clawd then
   clawd_sets = {
-    thinking = load_frame_dir(CLAWD.thinking, false),
-    tool     = load_frame_dir(CLAWD.tool, false),
-    rest     = load_frame_dir(CLAWD.rest, false),
+    thinking   = load_frame_dir(CLAWD.thinking, false),
+    tool       = load_frame_dir(CLAWD.tool, false),
+    rest       = load_frame_dir(CLAWD.rest, false),
+    permission = load_frame_dir(CLAWD.permission, false),
+    done       = load_frame_dir(CLAWD.done, false),
   }
   frames = clawd_sets.thinking -- default/fallback set (the thinking emote)
 else
@@ -220,7 +230,9 @@ local fidgeting = false -- clawd only: an idle "fidget" walk is currently playin
 local function current_frames()
   if not is_clawd then return frames end
   if cur.state == "tool" then return clawd_sets.tool end
-  return clawd_sets.thinking -- thinking (idle/done don't animate; they rest on the crab)
+  if cur.state == "permission" then return clawd_sets.permission end
+  if cur.state == "done" then return clawd_sets.done end
+  return clawd_sets.thinking -- thinking (idle/waiting don't animate; they rest on the crab)
 end
 
 -- Anthropic service health from the Statuspage; "none" (or "") means all systems operational.
@@ -301,7 +313,10 @@ local function apply()
   local s = cur.state
   -- clawd swaps between its thinking/typing loops while Claude works, but (like the other
   -- styles) it rests on a static icon when idle — see current_frames() and `resting`.
+  -- clawd additionally animates two states the other styles draw statically: a "listening"
+  -- emote while awaiting permission and a "birthday" emote at done (see current_frames()).
   local animate = (s == "thinking" or s == "tool")
+  if is_clawd and (s == "permission" or s == "done") then animate = true end
 
   if animate then
     local set = current_frames()
@@ -312,8 +327,15 @@ local function apply()
       icon_slot.top = dpi(2) -- the bigger working emote needs the slot's headroom back
     end
     if is_code then set_code_icon(frame_i, cfg.brand) else icon.image = set[frame_i] or resting end
-    local base = (cur.label ~= "" and cur.label) or (s == "tool" and "Working…" or "Thinking…")
-    set_label(base, cur.startedAt)
+    -- permission/done are clawd-only animated states; the rest derive a working label.
+    if s == "permission" then
+      set_label("Awaiting permission", 0)
+    elseif s == "done" then
+      set_label("", 0)
+    else
+      local base = (cur.label ~= "" and cur.label) or (s == "tool" and "Working…" or "Thinking…")
+      set_label(base, cur.startedAt)
+    end
     root.visible = true
   else
     animating = false; anim_timer:stop()
