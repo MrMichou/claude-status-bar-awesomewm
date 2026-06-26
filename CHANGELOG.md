@@ -5,10 +5,21 @@ All notable changes to Claude Status Bar are documented here. This project follo
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-25
+
+First release of the **awesomewm/Linux port** — a wibar widget that mirrors the macOS Claude Status Bar app, driven entirely by Claude Code hooks. Original idea, design, and artwork by [@mickces](https://github.com/m1ckc3s/claude-status-bar).
+
 ### Added
-- **"Claude down" service-status indicator** (awesomewm/Linux). The widget now polls the public [Anthropic Statuspage](https://status.claude.com) and, when an incident is live (`status.indicator` is `minor`/`major`/`critical`), shows a **red dot + "Claude down"** with the incident description over whatever the local session state is, reverting the moment it clears. A `naughty` notification fires when the outage starts and when it recovers (toggle it from the right-click settings menu, "Notify on Claude outage"). The check shells out to `curl` asynchronously every `service_poll_seconds` (60s default) so the event loop never blocks; without `curl` it's silently disabled and the rest of the widget is unchanged. Configurable via `check_service` / `service_url` / `service_poll_seconds` / `notify_service` in `cfg`.
-- **Yes/No buttons on the permission notification** (awesomewm/Linux). When Claude asks to approve a tool, the `naughty` popup now offers **Yes** and **No** buttons — clicking one focuses that session's terminal and presses the matching key (`Return` to approve, `Escape` to deny), so you can answer without leaving what you're doing. Needs `xdotool` and a captured window id (the same one the jump-to-window feature uses); without either, the popup still appears, just without the buttons. Toggle it from the right-click settings menu ("Yes/No buttons on permission"); the keys are configurable via `permission_yes_key` / `permission_no_key`.
-- **Click a session in the menu to jump to its window** (awesomewm/Linux). The `SessionStart` hook now records the X11 window where `claude` was launched (via `_NET_ACTIVE_WINDOW`), and rows with a known window show a `↗` hint and become clickable — clicking switches to that window's tag, unminimizes, raises and focuses it. Window matching is by exact X11 window id, so it works with terminals like terminator that share one process across multiple windows.
+- **awesomewm/Linux port.** A `claude_status` wibar widget reading `~/.claude/statusbar/state.json` (written by the project's Node hooks): an animated icon, a tool label + elapsed turn timer while Claude works, an "awaiting permission" dot, and an active-sessions menu. Idle, it rests on the tinted Claude logo. Shipped with `install.js` / `uninstall.js` / `update.js` lifecycle hooks and a plugin marketplace manifest.
+- **Animation styles.** `web` (Claude spark), `crab` (a static pixel-art Clawd crab), `code` (Claude Code's terminal glyph spinner), and `clawd` — a **dynamic state-driven style** whose loop tracks what Claude is doing (thinking / typing). Crab is the default; color follows an Orange/System setting.
+- **`clawd` permission and done emotes.** The dynamic style now plays dedicated **listening** (awaiting-permission) and **birthday** (turn-done) emotes on top of its thinking/typing loops.
+- **Optional desktop crab pet** (opt-in). A pixel-art Clawd crab that lives on the desktop and plays per-step walking animations; toggled from the right-click settings menu.
+- **Right-click settings menu** to pick the animation style, toggle the elapsed timer, completion sound, and notifications — choices persisted to `~/.claude/statusbar/widget.json`.
+- **"Claude down" service-status indicator.** The widget polls the public [Anthropic Statuspage](https://status.claude.com) and, when an incident is live (`status.indicator` is `minor`/`major`/`critical`), shows a **red dot + "Claude down"** with the incident description over whatever the local session state is, reverting the moment it clears. A `naughty` notification fires when the outage starts and when it recovers (toggle it from the settings menu, "Notify on Claude outage"). The check shells out to `curl` asynchronously every `service_poll_seconds` (60s default) so the event loop never blocks; without `curl` it's silently disabled. Configurable via `check_service` / `service_url` / `service_poll_seconds` / `notify_service` in `cfg`.
+- **Yes/No buttons on the permission notification.** When Claude asks to approve a tool, the `naughty` popup offers **Yes** and **No** buttons — clicking one focuses that session's terminal and presses the matching key (`Return` to approve, `Escape` to deny), so you can answer without leaving what you're doing. Needs `xdotool` and a captured window id (the same one the jump-to-window feature uses); without either, the popup still appears, just without the buttons. Toggle it from the settings menu ("Yes/No buttons on permission"); the keys are configurable via `permission_yes_key` / `permission_no_key`.
+- **Click a session in the menu to jump to its window.** The `SessionStart` hook records the X11 window where `claude` was launched (via `_NET_ACTIVE_WINDOW`), and rows with a known window show a `↗` hint and become clickable — clicking switches to that window's tag, unminimizes, raises and focuses it. Window matching is by exact X11 window id, so it works with terminals like terminator that share one process across multiple windows.
+- **Stuck-state recovery** so a session that dies mid-turn no longer leaves the icon spinning forever.
+- **Test suites and CI.** JS hook tests (vitest) and a Lua spec suite (busted), plus luacheck linting, all run in GitHub Actions.
 
 ## [0.2.0] - 2026-06-25
 
@@ -69,6 +80,7 @@ All notable changes to Claude Status Bar are documented here. This project follo
 - Signed and notarized DMG so it opens without a Gatekeeper warning.
 - Claude Code plugin marketplace manifest for the plugin install path.
 
+[0.3.0]: https://github.com/MrMichou/claude-status-bar-awesomewm/releases/tag/v0.3.0
 [0.2.0]: https://github.com/m1ckc3s/claude-status-bar/releases/tag/v0.2.0
 [0.1.0]: https://github.com/m1ckc3s/claude-status-bar/releases/tag/v0.1.0
 [0.0.5]: https://github.com/m1ckc3s/claude-status-bar/releases/tag/v0.0.5
