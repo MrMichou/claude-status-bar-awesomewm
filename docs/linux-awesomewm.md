@@ -96,8 +96,9 @@ local claude_status = require("ui.bar.widgets.claude_status")
   session with its project name, current state (colored dot + label) and elapsed time.
   A session whose window is known shows a `↗` hint and is **clickable** — clicking it
   jumps to that terminal window (switches tag, unminimizes, raises and focuses it).
-- **Right click** — the **settings menu**: pick the animation style (Crab / Spark /
-  Claude Code glyphs), toggle the timer, and toggle the permission/done/outage notifications.
+- **Right click** — the **settings menu**: pick the animation style (Crab / Clawd emotes /
+  Spark / Claude Code glyphs), toggle the timer, and toggle the permission/done/outage
+  notifications.
   Picks are persisted to `~/.claude/statusbar/widget.json` and override the `cfg`
   defaults, so they survive an Awesome restart. (Changing the style triggers a quick
   Awesome restart, since each style builds its icon differently.)
@@ -126,7 +127,7 @@ Edit the `cfg` table at the top of `claude_status/init.lua`:
 
 | Key | Default | Description |
 |---|---|---|
-| `style` | `"crab"` | `"crab"` (pixel-art crab), `"web"` (Claude spark), or `"code"` (terminal glyph spinner ✻✽✶✳✢) |
+| `style` | `"crab"` | `"crab"` (pixel-art crab), `"clawd"` (pixel crab with a **different loop per state** — thinks, types while working, walks at rest), `"web"` (Claude spark), or `"code"` (terminal glyph spinner ✻✽✶✳✢) |
 | `brand` | `"#d97757"` | Tint color for the spark / logo (alpha-mask frames) |
 | `amber` | `"#f2bb2e"` | "Awaiting permission" dot color |
 | `down` | `"#e5484d"` | "Claude service down" dot color |
