@@ -51,18 +51,23 @@ local FPS = { web = 9, crab = 12.5, clawd = 14 }
 -- "clawd" style: a pixel crab with a *different* loop per state (the emote set from
 -- github.com/xixicc186/clawd-emotes-skill, exported to PNG frames). Unlike the single-loop
 -- styles, the displayed animation switches with Claude's state — see current_frames().
--- Emotes from the same set also cover two states the other styles render statically: an
--- attentive "listening" crab while awaiting permission, and a "birthday" celebration at done.
+-- Emotes from the same set also cover three states the other styles render statically: an
+-- attentive "listening" crab while awaiting permission, a "birthday" celebration at done, and
+-- a "sleeping" crab (nightcap, in bed) while idle — i.e. when no session is doing anything.
 local CLAWD = {
   thinking   = "clawd/thinking",
   tool       = "clawd/typing",
   rest       = "clawd/walk",
   permission = "clawd/listening",
   done       = "clawd/birthday",
+  sleeping   = "clawd/sleeping",
 }
 -- The thinking/typing emotes read small at the resting icon size, so clawd renders them a
 -- little larger while Claude works (the rest crab keeps the normal size). dpi() applied below.
 local CLAWD_WORK_SIZE = 40
+-- The idle "sleeping" emote animates gently (breathing + a bobbing nightcap); it sits between
+-- the resting icon and the bigger working emotes so it reads without dominating the bar.
+local CLAWD_SLEEP_SIZE = 26
 -- "code" style: Claude Code's terminal glyph spinner, tweened with a scale pulse.
 local CODE = { glyphs = { "✻", "✽", "✶", "✳", "✢" }, sub = 18, dip = 0.14, base_pt = 14, cycle = 3.8 }
 --==============================================================================
@@ -94,6 +99,26 @@ load_settings()
 local state_path = os.getenv("HOME") .. "/.claude/statusbar/state.json"
 local module_dir = (debug.getinfo(1, "S").source:match("^@(.*/)")) or "./"
 local frames_dir = module_dir .. "frames/"
+
+-- No hook ever writes a global "idle" state: state.json keeps its last value after a turn
+-- ("done"/"permission"/…), so it can't tell us "no session is open". The session markers in
+-- sessions.d/ can — the lifecycle hook drops one at SessionStart and removes it at SessionEnd.
+-- An empty dir means nothing is running, which drives the idle (sleeping) emote below.
+local sessions_marker_dir = os.getenv("HOME") .. "/.claude/statusbar/sessions.d/"
+local function open_session_count()
+  local n = 0
+  pcall(function()
+    local Gio = lgi.Gio
+    local en = Gio.File.new_for_path(sessions_marker_dir)
+      :enumerate_children("standard::name", Gio.FileQueryInfoFlags.NONE)
+    if not en then return end
+    while true do
+      local info = en:next_file(); if not info then break end
+      if not info:get_name():match("%.") then n = n + 1 end -- markers are bare ids (skip .tmp/.json)
+    end
+  end)
+  return n
+end
 
 -- Paint `color` through an alpha-mask PNG -> a colored cairo surface (the macOS tint).
 local function tint(path, color)
@@ -147,6 +172,7 @@ elseif is_clawd then
     rest       = load_frame_dir(CLAWD.rest, false),
     permission = load_frame_dir(CLAWD.permission, false),
     done       = load_frame_dir(CLAWD.done, false),
+    sleeping   = load_frame_dir(CLAWD.sleeping, false),
   }
   frames = clawd_sets.thinking -- default/fallback set (the thinking emote)
 else
@@ -232,7 +258,8 @@ local function current_frames()
   if cur.state == "tool" then return clawd_sets.tool end
   if cur.state == "permission" then return clawd_sets.permission end
   if cur.state == "done" then return clawd_sets.done end
-  return clawd_sets.thinking -- thinking (idle/waiting don't animate; they rest on the crab)
+  if cur.state == "idle" then return clawd_sets.sleeping end -- nothing running: the crab sleeps
+  return clawd_sets.thinking -- thinking (waiting doesn't animate; it rests on the crab)
 end
 
 -- Anthropic service health from the Statuspage; "none" (or "") means all systems operational.
@@ -313,30 +340,38 @@ local function apply()
   local s = cur.state
   -- clawd swaps between its thinking/typing loops while Claude works, but (like the other
   -- styles) it rests on a static icon when idle — see current_frames() and `resting`.
-  -- clawd additionally animates two states the other styles draw statically: a "listening"
-  -- emote while awaiting permission and a "birthday" emote at done (see current_frames()).
+  -- clawd additionally animates three states the other styles draw statically: a "listening"
+  -- emote while awaiting permission, a "birthday" emote at done, and a "sleeping" emote at idle
+  -- (when nothing is running, in place of the static rest crab — see current_frames()).
   local animate = (s == "thinking" or s == "tool")
-  if is_clawd and (s == "permission" or s == "done") then animate = true end
+  if is_clawd and (s == "permission" or s == "done" or s == "idle") then animate = true end
 
   if animate then
     local set = current_frames()
     if set ~= active_set then active_set = set; frame_i = 1 end -- restart on a loop switch
     if not animating then animating = true; anim_timer:again() end
     if is_clawd then
-      icon.forced_width = dpi(CLAWD_WORK_SIZE); icon.forced_height = dpi(CLAWD_WORK_SIZE)
-      icon_slot.top = dpi(2) -- the bigger working emote needs the slot's headroom back
+      -- the idle sleeping emote sits smaller than the working emotes; size the slot to match.
+      local sz = (s == "idle") and CLAWD_SLEEP_SIZE or CLAWD_WORK_SIZE
+      icon.forced_width = dpi(sz); icon.forced_height = dpi(sz)
+      icon_slot.top = (s == "idle") and dpi(4) or dpi(2)
     end
     if is_code then set_code_icon(frame_i, cfg.brand) else icon.image = set[frame_i] or resting end
-    -- permission/done are clawd-only animated states; the rest derive a working label.
+    -- permission/done/idle are clawd-only animated states; the rest derive a working label.
     if s == "permission" then
       set_label("Awaiting permission", 0)
+      root.visible = true
     elseif s == "done" then
       set_label("", 0)
+      root.visible = true
+    elseif s == "idle" then
+      set_label("", 0)
+      root.visible = not cfg.hide_when_idle
     else
       local base = (cur.label ~= "" and cur.label) or (s == "tool" and "Working…" or "Thinking…")
       set_label(base, cur.startedAt)
+      root.visible = true
     end
-    root.visible = true
   else
     animating = false; anim_timer:stop()
     if is_clawd then
@@ -549,6 +584,11 @@ gears.timer {
         project = st.project or "",
         sessionId = st.sessionId or "",
       }
+    end
+
+    -- No session open at all → idle, so the crab sleeps (the stale state.json can't say this).
+    if open_session_count() == 0 then
+      cur = { state = "idle", label = "", startedAt = 0, project = "", sessionId = "" }
     end
 
     if cur.startedAt > 0 then turn_started = cur.startedAt end

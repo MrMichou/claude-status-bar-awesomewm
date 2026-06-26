@@ -5,6 +5,9 @@ All notable changes to Claude Status Bar are documented here. This project follo
 
 ## [Unreleased]
 
+### Added
+- **`clawd` sleeping idle emote.** When nothing is running (no open session), the dynamic `clawd` style now plays a **sleeping** crab — nightcap on, tucked in bed, breathing gently — in place of the static rest crab. Artwork from [xixicc186/clawd-emotes-skill](https://github.com/xixicc186/clawd-emotes-skill).
+
 ## [0.3.0] - 2026-06-25
 
 First release of the **awesomewm/Linux port** — a wibar widget that mirrors the macOS Claude Status Bar app, driven entirely by Claude Code hooks. Original idea, design, and artwork by [@mickces](https://github.com/m1ckc3s/claude-status-bar).
