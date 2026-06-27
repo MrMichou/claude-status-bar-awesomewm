@@ -312,11 +312,17 @@ local anim_timer = gears.timer {
   end,
 }
 
+-- The poll re-runs apply() for a live timer every 0.4s, but the rendered text only changes
+-- once a second. Cache the last text so we hit the textbox (markup reset + reflow) only when
+-- the displayed string — seconds included — actually changes.
+local last_label_text = nil
 local function set_label(base, startedAt)
   local text = base or ""
   if cfg.show_timer and startedAt and startedAt > 0 then
     text = text .. "  " .. fmt_elapsed(startedAt)
   end
+  if text == last_label_text then return end
+  last_label_text = text
   label.markup = ""
   label:set_text(text)
 end
