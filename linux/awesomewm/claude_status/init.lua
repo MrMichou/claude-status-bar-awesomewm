@@ -161,20 +161,25 @@ local is_code = (cfg.style == "code")
 local is_clawd = (cfg.style == "clawd")
 
 -- For clawd we hold one loop per state; the other image styles use a single `frames` set.
-local clawd_sets
+-- The clawd loops are loaded lazily: decoding all six up front kept ~285 frames (≈12 MB of
+-- cairo surfaces) resident even though listening/birthday/sleeping are rarely shown. clawd_set
+-- decodes a loop on first use and memoises it, so an idle bar only pays for what it displays.
+local clawd_cache = {}
+local function clawd_set(key)
+  local s = clawd_cache[key]
+  if s == nil then
+    s = load_frame_dir(CLAWD[key], false)
+    clawd_cache[key] = s
+  end
+  return s
+end
+
 local frames
 if is_code then
   frames = {}
 elseif is_clawd then
-  clawd_sets = {
-    thinking   = load_frame_dir(CLAWD.thinking, false),
-    tool       = load_frame_dir(CLAWD.tool, false),
-    rest       = load_frame_dir(CLAWD.rest, false),
-    permission = load_frame_dir(CLAWD.permission, false),
-    done       = load_frame_dir(CLAWD.done, false),
-    sleeping   = load_frame_dir(CLAWD.sleeping, false),
-  }
-  frames = clawd_sets.thinking -- default/fallback set (the thinking emote)
+  -- Only the thinking emote is needed eagerly: it backs `frames` and the resting fallback.
+  frames = clawd_set("thinking")
 else
   frames = load_frame_dir(cfg.style, cfg.style == "web")
 end
@@ -189,7 +194,7 @@ local resting
 if is_clawd then
   -- At rest the clawd style poses on the original pixel crab frame (never clipped), the way
   -- the macOS app rests on its logo; it only animates (thinking/typing) while Claude works.
-  resting = (clawd_rest_frames and clawd_rest_frames[1]) or clawd_sets.thinking[1]
+  resting = (clawd_rest_frames and clawd_rest_frames[1]) or clawd_set("thinking")[1]
 elseif cfg.style == "crab" then
   resting = frames[1]
 else
@@ -255,11 +260,11 @@ local fidgeting = false -- clawd only: an idle "fidget" walk is currently playin
 -- the clawd style swaps loops so the animation tracks what Claude is doing.
 local function current_frames()
   if not is_clawd then return frames end
-  if cur.state == "tool" then return clawd_sets.tool end
-  if cur.state == "permission" then return clawd_sets.permission end
-  if cur.state == "done" then return clawd_sets.done end
-  if cur.state == "idle" then return clawd_sets.sleeping end -- nothing running: the crab sleeps
-  return clawd_sets.thinking -- thinking (waiting doesn't animate; it rests on the crab)
+  if cur.state == "tool" then return clawd_set("tool") end
+  if cur.state == "permission" then return clawd_set("permission") end
+  if cur.state == "done" then return clawd_set("done") end
+  if cur.state == "idle" then return clawd_set("sleeping") end -- nothing running: the crab sleeps
+  return clawd_set("thinking") -- thinking (waiting doesn't animate; it rests on the crab)
 end
 
 -- Anthropic service health from the Statuspage; "none" (or "") means all systems operational.
