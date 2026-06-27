@@ -8,6 +8,11 @@ All notable changes to Claude Status Bar are documented here. This project follo
 ### Added
 - **`clawd` sleeping idle emote.** When nothing is running (no open session), the dynamic `clawd` style now plays a **sleeping** crab — nightcap on, tucked in bed, breathing gently — in place of the static rest crab. Artwork from [xixicc186/clawd-emotes-skill](https://github.com/xixicc186/clawd-emotes-skill).
 
+### Changed
+- **Idle is now nearly free (poll loop).** The widget polled `state.json` every `poll_seconds` (0.4s) by re-reading + JSON-decoding the file, re-enumerating `sessions.d/`, and re-rendering — even when nothing changed, which at idle is most of the time. The read/decode is now gated on the file's modification time (a `stat` instead of a parse), the session-directory scan is throttled, and the widget only re-renders when the displayed state could actually differ. Behavior is unchanged. (#6)
+- **`clawd` emotes load on demand.** The dynamic style decoded all six per-state loops at startup (~285 frames, ≈12 MB of cairo surfaces resident) even though the larger emotes are rarely shown. Each loop is now decoded the first time its state appears and cached, dropping idle memory to a few MB. The unused `walk` loop is no longer loaded at all. (#7)
+- **Less redundant label work.** The elapsed-timer label is only rewritten when the displayed text actually changes (once a second), rather than on every 0.4s poll. (#8)
+
 ## [0.3.0] - 2026-06-25
 
 First release of the **awesomewm/Linux port** — a wibar widget that mirrors the macOS Claude Status Bar app, driven entirely by Claude Code hooks. Original idea, design, and artwork by [@mickces](https://github.com/m1ckc3s/claude-status-bar).
