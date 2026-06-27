@@ -536,6 +536,22 @@ local function read_state()
   return json.decode(raw)
 end
 
+-- state.json's modification time in microseconds, so the poll can skip re-reading +
+-- decoding it while it hasn't changed (the idle case). nil = absent or stat failed; the
+-- caller then falls back to an unconditional read, so a broken stat never hides the file.
+local function file_mtime(path)
+  local mt
+  pcall(function()
+    local Gio = lgi.Gio
+    local info = Gio.File.new_for_path(path)
+      :query_info("time::modified,time::modified-usec", Gio.FileQueryInfoFlags.NONE)
+    if not info then return end
+    mt = info:get_attribute_uint64("time::modified") * 1000000
+       + info:get_attribute_uint32("time::modified-usec")
+  end)
+  return mt
+end
+
 -- Last non-empty line of a (possibly large) file, read by tailing ~8KB.
 local function last_line(path)
   local f = io.open(path, "rb")
@@ -566,13 +582,31 @@ local function effective_state(st)
   return s
 end
 
+-- Poll state. The expensive work is gated on state.json's mtime so an idle bar (the
+-- dominant case) costs a stat() instead of a read + JSON-decode every tick, and we only
+-- re-render when something that affects the widget actually changed.
 -- Autostarts itself; we keep no reference to the timer.
+local poll_mtime = nil   -- last seen state.json mtime (µs); nil = absent / stat failed
+local poll_st = nil      -- last decoded state.json, reused while the mtime is unchanged
+local applied_sig = nil  -- signature of the last apply()ed render state
+local session_ticks = 0  -- countdown to the next sessions.d re-enumeration
+local no_session = false -- cached "no session open" (drives the idle/sleeping crab)
+local SESSION_EVERY = 5  -- re-enumerate sessions.d at most every N polls (~2s) at idle
 gears.timer {
   timeout = cfg.poll_seconds,
   call_now = true,
   autostart = true,
   callback = function()
-    local st = read_state()
+    -- nil mtime (absent file or a failed stat) forces an unconditional read, so the gate
+    -- can only ever skip work, never hide a state.json we should have read.
+    local mt = file_mtime(state_path)
+    local changed = (mt == nil) or (mt ~= poll_mtime)
+    if changed then
+      poll_mtime = mt
+      poll_st = read_state()
+    end
+
+    local st = poll_st
     if not st then
       cur = { state = "idle", label = "", startedAt = 0 }
     else
@@ -586,8 +620,16 @@ gears.timer {
       }
     end
 
-    -- No session open at all → idle, so the crab sleeps (the stale state.json can't say this).
-    if open_session_count() == 0 then
+    -- No session open at all → idle, so the crab sleeps (the stale state.json can't say
+    -- this). Re-enumerating sessions.d every tick is wasteful at idle; refresh it on a
+    -- fresh write (mtime change ⇒ a session is alive) or every SESSION_EVERY polls.
+    if changed or session_ticks <= 0 then
+      session_ticks = SESSION_EVERY
+      no_session = (open_session_count() == 0)
+    else
+      session_ticks = session_ticks - 1
+    end
+    if no_session then
       cur = { state = "idle", label = "", startedAt = 0, project = "", sessionId = "" }
     end
 
@@ -599,7 +641,14 @@ gears.timer {
       prev_state = cur.state
     end
 
-    apply()
+    -- Re-render only when the result could differ: a new signature, or a live-timer state
+    -- whose elapsed text keeps ticking while we sit in it.
+    local live = (cur.state == "thinking" or cur.state == "tool")
+    local sig = cur.state .. "|" .. (cur.label or "") .. "|" .. tostring(cur.startedAt)
+    if live or sig ~= applied_sig then
+      applied_sig = sig
+      apply()
+    end
   end,
 }
 
