@@ -38,6 +38,10 @@ local cfg = {
   permission_yes_key = "Return", -- Claude Code's default-highlighted "Yes"
   permission_no_key  = "Escape", -- "No, and tell Claude what to do differently"
   done_min_seconds  = 60,        -- only notify "done" for turns at least this long (0 = always)
+  -- One-shot "still working" nudge when a turn runs long (useful when you've tabbed away).
+  -- Fires once per turn; re-arms on the next turn. Off by default.
+  notify_long_turn  = false,
+  long_turn_seconds = 300,
   sound_cmd      = nil,          -- e.g. "paplay /usr/share/sounds/freedesktop/stereo/complete.oga"
   poll_seconds   = 0.4,
   -- Anthropic service health, polled from the public Statuspage. When an incident is live the
@@ -84,6 +88,7 @@ local SETTINGS_SCHEMA = {
   notify_permission_actions = "boolean", notify_service = "boolean",
   permission_yes_key = "string", permission_no_key = "string",
   done_min_seconds = "number", sound_cmd = "string",
+  notify_long_turn = "boolean", long_turn_seconds = "number",
   poll_seconds = "number", check_service = "boolean",
   service_poll_seconds = "number",
 }
@@ -91,7 +96,7 @@ local SETTINGS_SCHEMA = {
 -- and round-trips every other key the user hand-edited into widget.json.
 local MENU_KEYS = {
   "style", "show_timer", "notify_permission", "notify_done",
-  "notify_permission_actions", "notify_service",
+  "notify_permission_actions", "notify_service", "notify_long_turn",
 }
 local settings_path = os.getenv("HOME") .. "/.claude/statusbar/widget.json"
 local raw_settings = {} -- the decoded widget.json, kept verbatim for save round-tripping
@@ -563,6 +568,19 @@ local function notify_service(kind, description)
   end
 end
 
+-- One-shot "this turn is taking a while" nudge. Fired by the poll loop once the live
+-- turn passes cfg.long_turn_seconds; the loop dedupes on startedAt so it fires once
+-- per turn and re-arms on the next one.
+local function notify_long_turn()
+  local project = cur.project and cur.project ~= "" and (" — " .. cur.project) or ""
+  naughty.notification {
+    title = "Claude Code",
+    message = "Still working — " .. fmt_elapsed(cur.startedAt) .. " elapsed" .. project,
+    urgency = "normal",
+    icon = resting,
+  }
+end
+
 local function read_state()
   local f = io.open(state_path, "r")
   if not f then return nil end
@@ -627,6 +645,7 @@ local applied_sig = nil  -- signature of the last apply()ed render state
 local session_ticks = 0  -- countdown to the next sessions.d re-enumeration
 local no_session = false -- cached "no session open" (drives the idle/sleeping crab)
 local SESSION_EVERY = 5  -- re-enumerate sessions.d at most every N polls (~2s) at idle
+local long_turn_notified = 0 -- startedAt we already nudged for (dedupe the long-turn notification)
 gears.timer {
   timeout = cfg.poll_seconds,
   call_now = true,
@@ -679,6 +698,16 @@ gears.timer {
     -- Re-render only when the result could differ: a new signature, or a live-timer state
     -- whose elapsed text keeps ticking while we sit in it.
     local live = (cur.state == "thinking" or cur.state == "tool")
+
+    -- "Still working" nudge: once a live turn crosses the threshold, fire once and remember
+    -- this turn's startedAt so a new turn (different startedAt) re-arms it on its own.
+    if cfg.notify_long_turn and live and cur.startedAt > 0
+      and long_turn_notified ~= cur.startedAt
+      and (os.time() - cur.startedAt) > cfg.long_turn_seconds then
+      long_turn_notified = cur.startedAt
+      notify_long_turn()
+    end
+
     local sig = cur.state .. "|" .. (cur.label or "") .. "|" .. tostring(cur.startedAt)
     if live or sig ~= applied_sig then
       applied_sig = sig
@@ -929,6 +958,8 @@ local function build_settings_menu()
         function() cfg.notify_permission_actions = not cfg.notify_permission_actions; save_settings() end },
       { check(cfg.notify_done) .. "Notify on done",
         function() cfg.notify_done = not cfg.notify_done; save_settings() end },
+      { check(cfg.notify_long_turn) .. "Notify on long turn",
+        function() cfg.notify_long_turn = not cfg.notify_long_turn; save_settings() end },
       { check(cfg.notify_service) .. "Notify on Claude outage",
         function() cfg.notify_service = not cfg.notify_service; save_settings() end },
     },
