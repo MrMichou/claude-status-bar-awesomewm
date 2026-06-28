@@ -103,14 +103,27 @@ local claude_status = require("ui.bar.widgets.claude_status")
   defaults, so they survive an Awesome restart. (Changing the style triggers a quick
   Awesome restart, since each style builds its icon differently.)
 
-You can also bind keys — the widget exposes `toggle_sessions_menu()` and
-`toggle_settings_menu()`:
+You can also bind keys — the widget exposes `toggle_sessions_menu()`,
+`toggle_settings_menu()`, `cycle_sessions()` and `focus_session_by_id(id)`:
 
 ```lua
+local claude = require("ui.bar.widgets.claude_status")
+
 awful.key({ modkey }, "c", function()
-  require("ui.bar.widgets.claude_status").toggle_sessions_menu()
-end, { description = "Claude sessions", group = "launcher" })
+  claude.toggle_sessions_menu()
+end, { description = "Claude sessions menu", group = "launcher" })
+
+-- Jump straight to the next Claude session's terminal (cycles in sorted-id order,
+-- wrapping around) — no mouse, no menu. Only sessions with a captured window id
+-- participate.
+awful.key({ modkey }, "x", function()
+  claude.cycle_sessions()
+end, { description = "Cycle Claude sessions", group = "launcher" })
 ```
+
+`focus_session_by_id("<session-id>")` jumps to one specific session if you'd rather
+bind individual sessions; both reuse the same window-focus logic as the clickable
+menu rows (switch tag, unminimize, raise, focus).
 
 The list is built from the session markers in `~/.claude/statusbar/sessions.d/`,
 enriched with per-session state written to `~/.claude/statusbar/sessions-state/`.
