@@ -123,7 +123,30 @@ their next start.
 
 ## Configuration
 
-Edit the `cfg` table at the top of `claude_status/init.lua`:
+Every key below can be overridden in **`~/.claude/statusbar/widget.json`** — you no
+longer need to edit `init.lua` (so your settings survive a widget update). The file is
+a flat JSON object; only the keys you set are applied, the rest keep their defaults. A
+malformed value (wrong type) is silently ignored.
+
+```json
+{
+  "style": "clawd",
+  "brand": "#d97757",
+  "icon_size": 22,
+  "show_timer": true,
+  "hide_when_idle": false,
+  "poll_seconds": 0.4,
+  "done_min_seconds": 30,
+  "sound_cmd": "paplay /usr/share/sounds/freedesktop/stereo/complete.oga"
+}
+```
+
+The right-click settings menu writes back `style`, `show_timer` and the `notify_*`
+flags; any other key you hand-edited (colors, sizes, intervals, sound) is **preserved**
+on the next menu toggle, not wiped. `icon_size` is a raw pixel size in the file and is
+DPI-scaled on load (matching the `dpi(18)` default). `service_url` is intentionally
+**not** configurable via the file (it stays hardcoded to avoid an SSRF vector); change
+it in `cfg` if you really need to.
 
 | Key | Default | Description |
 |---|---|---|

@@ -72,27 +72,51 @@ local CLAWD_SLEEP_SIZE = 26
 local CODE = { glyphs = { "✻", "✽", "✶", "✳", "✢" }, sub = 18, dip = 0.14, base_pt = 14, cycle = 3.8 }
 --==============================================================================
 
--- Persisted settings (the right-click menu) override the cfg defaults above so
--- your picks survive an Awesome restart.
+-- Persisted settings (~/.claude/statusbar/widget.json) override the cfg defaults
+-- above so your picks survive an Awesome restart. Every key below can be set in the
+-- file by hand; the right-click menu only writes the MENU_KEYS subset and preserves
+-- the rest untouched (so a hand-edited color isn't wiped by a checkbox toggle).
+-- service_url is deliberately absent (potential SSRF vector) — it stays hardcoded.
+local SETTINGS_SCHEMA = {
+  style = "string", brand = "string", amber = "string", down = "string",
+  icon_size = "number", hide_when_idle = "boolean", show_timer = "boolean",
+  notify_permission = "boolean", notify_done = "boolean",
+  notify_permission_actions = "boolean", notify_service = "boolean",
+  permission_yes_key = "string", permission_no_key = "string",
+  done_min_seconds = "number", sound_cmd = "string",
+  poll_seconds = "number", check_service = "boolean",
+  service_poll_seconds = "number",
+}
+-- Keys the right-click settings menu manages: save_settings() writes these from cfg
+-- and round-trips every other key the user hand-edited into widget.json.
+local MENU_KEYS = {
+  "style", "show_timer", "notify_permission", "notify_done",
+  "notify_permission_actions", "notify_service",
+}
 local settings_path = os.getenv("HOME") .. "/.claude/statusbar/widget.json"
+local raw_settings = {} -- the decoded widget.json, kept verbatim for save round-tripping
 local function load_settings()
   local f = io.open(settings_path, "r"); if not f then return end
   local raw = f:read("*a"); f:close()
   local t = json.decode(raw); if type(t) ~= "table" then return end
-  if t.style then cfg.style = t.style end
-  if t.show_timer ~= nil then cfg.show_timer = t.show_timer end
-  if t.notify_permission ~= nil then cfg.notify_permission = t.notify_permission end
-  if t.notify_done ~= nil then cfg.notify_done = t.notify_done end
-  if t.notify_permission_actions ~= nil then cfg.notify_permission_actions = t.notify_permission_actions end
-  if t.notify_service ~= nil then cfg.notify_service = t.notify_service end
+  raw_settings = t
+  for k, ty in pairs(SETTINGS_SCHEMA) do
+    local v = t[k]
+    if type(v) == ty then -- a type mismatch silently rejects the malformed value
+      -- icon_size in the file is a raw size; scale it like the dpi(18) default.
+      if k == "icon_size" then cfg.icon_size = dpi(v) else cfg[k] = v end
+    end
+  end
 end
 local function save_settings()
+  local out = {}
+  for k, v in pairs(raw_settings) do out[k] = v end -- preserve hand-edited keys
+  for _, k in ipairs(MENU_KEYS) do out[k] = cfg[k] end -- override the menu-driven ones
+  local enc = json.encode(out)
+  if not enc then return end
+  raw_settings = out -- so the next save round-trips from what we just wrote
   local f = io.open(settings_path, "w"); if not f then return end
-  f:write(string.format(
-    [[{"style":%q,"show_timer":%s,"notify_permission":%s,"notify_done":%s,"notify_permission_actions":%s,"notify_service":%s}]],
-    cfg.style, tostring(cfg.show_timer), tostring(cfg.notify_permission), tostring(cfg.notify_done),
-    tostring(cfg.notify_permission_actions), tostring(cfg.notify_service)))
-  f:close()
+  f:write(enc); f:close()
 end
 load_settings()
 

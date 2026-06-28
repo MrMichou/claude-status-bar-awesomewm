@@ -59,3 +59,32 @@ describe("json.decode", function()
     end)
   end)
 end)
+
+describe("json.encode", function()
+  it("encodes a flat object with sorted keys", function()
+    assert.are.equal('{"a":1,"b":true,"c":"x"}', json.encode({ c = "x", a = 1, b = true }))
+  end)
+
+  it("escapes quotes and backslashes in strings", function()
+    assert.are.equal([[{"k":"a\"b\\c"}]], json.encode({ k = 'a"b\\c' }))
+  end)
+
+  it("skips nested tables and non-scalar values", function()
+    assert.are.equal('{"keep":"yes"}', json.encode({ keep = "yes", drop = { 1, 2 } }))
+  end)
+
+  it("round-trips a settings table through decode", function()
+    local settings = { style = "clawd", icon_size = 22, show_timer = true, brand = "#d97757" }
+    local v = json.decode(json.encode(settings))
+    assert.are.equal("clawd", v.style)
+    assert.are.equal(22, v.icon_size)
+    assert.are.equal(true, v.show_timer)
+    assert.are.equal("#d97757", v.brand)
+  end)
+
+  it("non-table input returns nil + message", function()
+    local v, e = json.encode("nope")
+    assert.is_nil(v)
+    assert.is_string(e)
+  end)
+end)

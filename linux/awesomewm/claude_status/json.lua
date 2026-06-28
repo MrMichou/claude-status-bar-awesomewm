@@ -118,4 +118,33 @@ function json.decode(str)
   return val
 end
 
+-- Minimal encoder for a *flat* object: string/number/boolean values only (the shape
+-- of widget.json). Keys are sorted for deterministic output, nested tables and other
+-- value types are skipped. Strings escape `"` and `\` (our values never contain
+-- control chars). Enough to round-trip settings back through json.decode.
+local function encode_string(s)
+  return '"' .. s:gsub('[\\"]', { ['\\'] = '\\\\', ['"'] = '\\"' }) .. '"'
+end
+
+function json.encode(t)
+  if type(t) ~= "table" then return nil, "not a table" end
+  local keys = {}
+  for k in pairs(t) do
+    if type(k) == "string" then keys[#keys + 1] = k end
+  end
+  table.sort(keys)
+  local parts = {}
+  for _, k in ipairs(keys) do
+    local v = t[k]
+    local tv = type(v)
+    local enc
+    if tv == "string" then enc = encode_string(v)
+    elseif tv == "boolean" then enc = tostring(v)
+    elseif tv == "number" then enc = tostring(v)
+    end
+    if enc then parts[#parts + 1] = encode_string(k) .. ":" .. enc end
+  end
+  return "{" .. table.concat(parts, ",") .. "}"
+end
+
 return json
