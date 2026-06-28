@@ -163,6 +163,8 @@ it in `cfg` if you really need to.
 | `permission_no_key` | `"Escape"` | Key sent for **No** ("tell Claude what to do differently") |
 | `notify_done` | `true` | `naughty` popup when a turn finishes |
 | `done_min_seconds` | `60` | Only notify "done" for turns at least this long (`0` = always) |
+| `notify_long_turn` | `false` | One-shot "Still working — Nm elapsed" `naughty` popup when a turn runs long (fires once per turn, re-arms on the next) |
+| `long_turn_seconds` | `300` | How long a live turn must run before the long-turn nudge fires |
 | `sound_cmd` | `nil` | Shell command to play on completion, e.g. `"paplay /usr/share/sounds/freedesktop/stereo/complete.oga"` |
 | `poll_seconds` | `0.4` | `state.json` poll interval |
 | `check_service` | `true` | Poll the Anthropic Statuspage and show "Claude down" during an incident (needs `curl`) |
