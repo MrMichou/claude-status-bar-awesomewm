@@ -174,7 +174,7 @@ it in `cfg` if you really need to.
 | `icon_size` | `dpi(18)` | Icon height/width |
 | `show_timer` | `true` | Show the `1m 1s` elapsed clock |
 | `show_aggregate` | `false` | When >1 session is open, append a compact `N · M working` badge to the label (full breakdown stays in the click-to-open menu) |
-| `show_tokens` | `false` | Append the current turn's token count + estimated cost to the label (e.g. `1.2k tok · $0.04`), derived from the transcript by the hooks |
+| `show_tokens` | `false` | When a turn **finishes**, show its token count + estimated cost on the bar (e.g. `1.2k tok · $0.04`), derived from the transcript by the hooks — a turn summary, not a live counter |
 | `hide_when_idle` | `false` | Hide the widget at idle (vs. resting logo) |
 | `notify_permission` | `true` | `naughty` popup on permission requests |
 | `notify_permission_actions` | `true` | Add **Yes**/**No** buttons to that popup (needs `xdotool` + a captured window id). Clicking focuses the session's terminal and presses the matching key. |

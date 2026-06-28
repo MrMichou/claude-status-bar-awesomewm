@@ -399,14 +399,16 @@ local function agg_badge()
   if agg_working > 0 then return string.format("  %d · %d working", agg_total, agg_working) end
   return string.format("  %d sessions", agg_total)
 end
--- Compact per-turn token + estimated-cost suffix, e.g. "  1.2k tok · $0.04" (the hook layer
--- writes cur.tokens / cur.cost from the transcript). Empty unless show_tokens is on with data.
+-- Compact per-turn token + estimated-cost suffix, e.g. "1.2k tok · $0.04" (the hook layer
+-- writes cur.tokens / cur.cost from the transcript). Shown only at the *end* of a turn (the
+-- "done" state), not as a live counter while Claude works — so it reads as a turn summary.
 local function fmt_tokens(n)
   if n >= 1000 then return string.format("%.1fk", n / 1000) end
   return tostring(math.floor(n))
 end
 local function tok_badge()
-  if not cfg.show_tokens or not cur.tokens or cur.tokens <= 0 then return "" end
+  if not cfg.show_tokens or cur.state ~= "done" then return "" end
+  if not cur.tokens or cur.tokens <= 0 then return "" end
   local seg = "  " .. fmt_tokens(cur.tokens) .. " tok"
   if cur.cost and cur.cost > 0 then
     local c = (cur.cost >= 0.1) and string.format("$%.2f", cur.cost) or string.format("$%.3f", cur.cost)
@@ -420,6 +422,7 @@ local function set_label(base, startedAt)
     text = text .. "  " .. fmt_elapsed(startedAt)
   end
   text = text .. agg_badge() .. tok_badge()
+  text = text:gsub("^%s+", "") -- a badge with an empty base would otherwise lead with spaces
   if text == last_label_text then return end
   last_label_text = text
   label.markup = ""
