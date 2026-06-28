@@ -45,7 +45,14 @@ local cfg = {
   -- Fires once per turn; re-arms on the next turn. Off by default.
   notify_long_turn  = false,
   long_turn_seconds = 300,
-  sound_cmd      = nil,          -- e.g. "paplay /usr/share/sounds/freedesktop/stereo/complete.oga"
+  sound_cmd      = nil,          -- custom shell command (advanced); if set, played on done + service
+  -- Bundled audible feedback (array spawn, no shell): a player + per-event sound files.
+  -- Off by default. done_sound defaults to the completion.mp3 installed by hooks/install.js;
+  -- permission_sound is optional and falls back to done_sound when unset.
+  play_sounds      = false,
+  sound_player     = "paplay",
+  done_sound       = os.getenv("HOME") .. "/.claude/statusbar/completion.mp3",
+  permission_sound = nil,
   poll_seconds   = 0.4,
   -- Anthropic service health, polled from the public Statuspage. When an incident is live the
   -- widget shows a red dot + "Claude down" over the normal session state and (optionally) notifies.
@@ -92,6 +99,8 @@ local SETTINGS_SCHEMA = {
   notify_permission_actions = "boolean", notify_service = "boolean",
   permission_yes_key = "string", permission_no_key = "string",
   done_min_seconds = "number", sound_cmd = "string",
+  play_sounds = "boolean", sound_player = "string",
+  done_sound = "string", permission_sound = "string",
   notify_long_turn = "boolean", long_turn_seconds = "number",
   poll_seconds = "number", check_service = "boolean",
   service_poll_seconds = "number",
@@ -100,7 +109,7 @@ local SETTINGS_SCHEMA = {
 -- and round-trips every other key the user hand-edited into widget.json.
 local MENU_KEYS = {
   "style", "show_timer", "show_aggregate", "notify_permission", "notify_done",
-  "notify_permission_actions", "notify_service", "notify_long_turn",
+  "notify_permission_actions", "notify_service", "notify_long_turn", "play_sounds",
 }
 local settings_path = os.getenv("HOME") .. "/.claude/statusbar/widget.json"
 local raw_settings = {} -- the decoded widget.json, kept verbatim for save round-tripping
@@ -557,6 +566,13 @@ local function answer_session(sessionId, keysym)
   return true
 end
 
+-- Play a sound file with the configured player via array spawn (no shell parsing).
+-- Gated on cfg.play_sounds; a nil/empty path is a no-op.
+local function play_sound(path)
+  if not cfg.play_sounds or not path or path == "" then return end
+  awful.spawn({ cfg.sound_player, path })
+end
+
 local function notify(state)
   local project = cur.project and cur.project ~= "" and (" — " .. cur.project) or ""
   if state == "permission" and cfg.notify_permission then
@@ -577,6 +593,8 @@ local function notify(state)
       args.actions = { yes, no }
     end
     naughty.notification(args)
+    -- A distinct permission cue (falls back to the done sound when unset).
+    play_sound(cfg.permission_sound or cfg.done_sound)
   elseif state == "done" and cfg.notify_done then
     local dur = (turn_started > 0) and (os.time() - turn_started) or 0
     if dur >= cfg.done_min_seconds then
@@ -585,7 +603,8 @@ local function notify(state)
         message = "Done" .. project,
         icon = resting,
       }
-      if cfg.sound_cmd then awful.spawn.with_shell(cfg.sound_cmd) end
+      -- sound_cmd (custom shell) still wins for back-compat; otherwise the bundled sound.
+      if cfg.sound_cmd then awful.spawn.with_shell(cfg.sound_cmd) else play_sound(cfg.done_sound) end
     end
   end
 end
@@ -1012,6 +1031,8 @@ local function build_settings_menu()
         function() cfg.notify_done = not cfg.notify_done; save_settings() end },
       { check(cfg.notify_long_turn) .. "Notify on long turn",
         function() cfg.notify_long_turn = not cfg.notify_long_turn; save_settings() end },
+      { check(cfg.play_sounds) .. "Play sounds",
+        function() cfg.play_sounds = not cfg.play_sounds; save_settings() end },
       { check(cfg.notify_service) .. "Notify on Claude outage",
         function() cfg.notify_service = not cfg.notify_service; save_settings() end },
     },
