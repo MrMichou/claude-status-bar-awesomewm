@@ -18,6 +18,76 @@ const TOOL_LABELS = {
   TodoWrite: "Planning",
 };
 
+// Per-million-token USD rates, matched by model-id prefix (longest first). cacheWrite is the
+// 5-minute write rate (1.25x input); cacheRead is 0.1x input. Used to estimate the cost of the
+// current turn from the transcript's usage metadata.
+const PRICING = [
+  ["claude-opus-4",   { in: 5,  out: 25, cacheWrite: 6.25, cacheRead: 0.5 }],
+  ["claude-sonnet-4", { in: 3,  out: 15, cacheWrite: 3.75, cacheRead: 0.3 }],
+  ["claude-haiku-4",  { in: 1,  out: 5,  cacheWrite: 1.25, cacheRead: 0.1 }],
+  ["claude-fable-5",  { in: 10, out: 50, cacheWrite: 12.5, cacheRead: 1.0 }],
+  ["claude-mythos-5", { in: 10, out: 50, cacheWrite: 12.5, cacheRead: 1.0 }],
+];
+const priceFor = (model) => {
+  for (const [prefix, p] of PRICING) if (model && model.startsWith(prefix)) return p;
+  return null;
+};
+
+// A turn-start line: a user message that is a real prompt, not a tool_result carrier.
+function isUserPrompt(o) {
+  if (!o || o.type !== "user" || !o.message) return false;
+  const c = o.message.content;
+  if (typeof c === "string") return true;
+  if (Array.isArray(c)) return !c.some((b) => b && b.type === "tool_result");
+  return false;
+}
+
+// Sum the usage of the assistant messages in the current turn (since the last user prompt),
+// reading only the transcript tail so a large file stays cheap on the hot path. Returns
+// { tokens, cost } where tokens is the turn's output tokens and cost is an estimate in USD.
+// Null if the transcript can't be read or carries no usable usage.
+function turnUsage(transcriptPath) {
+  if (!transcriptPath) return null;
+  let data, start;
+  try {
+    const stat = fs.statSync(transcriptPath);
+    const CAP = 1024 * 1024; // tail only — a turn rarely exceeds this; undercount past it
+    start = stat.size > CAP ? stat.size - CAP : 0;
+    const fd = fs.openSync(transcriptPath, "r");
+    try {
+      const len = stat.size - start;
+      const buf = Buffer.allocUnsafe(len);
+      fs.readSync(fd, buf, 0, len, start);
+      data = buf.toString("utf8");
+    } finally { fs.closeSync(fd); }
+  } catch { return null; }
+
+  const lines = data.split("\n");
+  if (start > 0) lines.shift(); // a mid-file start truncates the first line — drop it
+  let inTok = 0, outTok = 0, cacheCreate = 0, cacheRead = 0, model = null;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    let o;
+    try { o = JSON.parse(line); } catch { continue; }
+    if (isUserPrompt(o)) break; // reached the start of the current turn
+    const u = o && o.type === "assistant" && o.message && o.message.usage;
+    if (u) {
+      inTok += u.input_tokens || 0;
+      outTok += u.output_tokens || 0;
+      cacheCreate += u.cache_creation_input_tokens || 0;
+      cacheRead += u.cache_read_input_tokens || 0;
+      if (!model && o.message.model) model = o.message.model;
+    }
+  }
+  if (outTok === 0 && inTok === 0 && cacheRead === 0) return null;
+  const p = priceFor(model);
+  const cost = p
+    ? (inTok * p.in + outTok * p.out + cacheCreate * p.cacheWrite + cacheRead * p.cacheRead) / 1e6
+    : 0;
+  return { tokens: outTok, cost: Math.round(cost * 1e6) / 1e6 };
+}
+
 let raw = "";
 process.stdin.on("data", (d) => (raw += d));
 process.stdin.on("end", () => {
@@ -90,7 +160,18 @@ process.stdin.on("end", () => {
       return;
   }
 
-  const out = { state, label, tool: p.tool_name || "", project, sessionId: p.session_id || "", transcript: p.transcript_path || prev.transcript || "", startedAt, ts };
+  const transcript = p.transcript_path || prev.transcript || "";
+  // Token/cost for the current turn, derived from the transcript. Only recompute while a turn
+  // is live or just finished (the transcript carries usage then); otherwise carry the prior
+  // value forward so a mid-turn permission prompt doesn't blank it.
+  let tokens = prev.tokens, cost = prev.cost;
+  if (event === "prompt") {
+    tokens = 0; cost = 0; // new turn — reset until the first assistant usage lands
+  } else if (event === "pre" || event === "post" || event === "stop") {
+    const u = turnUsage(transcript);
+    if (u) { tokens = u.tokens; cost = u.cost; }
+  }
+  const out = { state, label, tool: p.tool_name || "", project, sessionId: p.session_id || "", transcript, startedAt, ts, tokens: tokens || 0, cost: cost || 0 };
   try {
     fs.mkdirSync(dir, { recursive: true });
     const tmp = statePath + "." + process.pid + ".tmp";

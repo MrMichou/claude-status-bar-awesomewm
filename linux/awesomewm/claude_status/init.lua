@@ -32,6 +32,9 @@ local cfg = {
   -- When several sessions run at once, append a compact "N · M working" badge to the
   -- label so multi-session activity shows on the bar (full breakdown stays in the menu).
   show_aggregate = false,
+  -- Append the current turn's token count + estimated cost to the label (e.g. "1.2k tok · $0.04").
+  -- The hook layer derives these from the transcript; the widget just renders them.
+  show_tokens    = false,
   hide_when_idle = false,        -- false: show the resting logo at idle (like macOS)
   notify_permission = true,
   notify_done       = true,
@@ -94,7 +97,7 @@ local CODE = { glyphs = { "✻", "✽", "✶", "✳", "✢" }, sub = 18, dip = 0
 local SETTINGS_SCHEMA = {
   style = "string", brand = "string", amber = "string", down = "string",
   icon_size = "number", hide_when_idle = "boolean", show_timer = "boolean",
-  show_aggregate = "boolean",
+  show_aggregate = "boolean", show_tokens = "boolean",
   notify_permission = "boolean", notify_done = "boolean",
   notify_permission_actions = "boolean", notify_service = "boolean",
   permission_yes_key = "string", permission_no_key = "string",
@@ -108,7 +111,7 @@ local SETTINGS_SCHEMA = {
 -- Keys the right-click settings menu manages: save_settings() writes these from cfg
 -- and round-trips every other key the user hand-edited into widget.json.
 local MENU_KEYS = {
-  "style", "show_timer", "show_aggregate", "notify_permission", "notify_done",
+  "style", "show_timer", "show_aggregate", "show_tokens", "notify_permission", "notify_done",
   "notify_permission_actions", "notify_service", "notify_long_turn", "play_sounds",
 }
 local settings_path = os.getenv("HOME") .. "/.claude/statusbar/widget.json"
@@ -396,12 +399,27 @@ local function agg_badge()
   if agg_working > 0 then return string.format("  %d · %d working", agg_total, agg_working) end
   return string.format("  %d sessions", agg_total)
 end
+-- Compact per-turn token + estimated-cost suffix, e.g. "  1.2k tok · $0.04" (the hook layer
+-- writes cur.tokens / cur.cost from the transcript). Empty unless show_tokens is on with data.
+local function fmt_tokens(n)
+  if n >= 1000 then return string.format("%.1fk", n / 1000) end
+  return tostring(math.floor(n))
+end
+local function tok_badge()
+  if not cfg.show_tokens or not cur.tokens or cur.tokens <= 0 then return "" end
+  local seg = "  " .. fmt_tokens(cur.tokens) .. " tok"
+  if cur.cost and cur.cost > 0 then
+    local c = (cur.cost >= 0.1) and string.format("$%.2f", cur.cost) or string.format("$%.3f", cur.cost)
+    seg = seg .. " · " .. c
+  end
+  return seg
+end
 local function set_label(base, startedAt)
   local text = base or ""
   if cfg.show_timer and startedAt and startedAt > 0 then
     text = text .. "  " .. fmt_elapsed(startedAt)
   end
-  text = text .. agg_badge()
+  text = text .. agg_badge() .. tok_badge()
   if text == last_label_text then return end
   last_label_text = text
   label.markup = ""
@@ -733,6 +751,8 @@ gears.timer {
         startedAt = tonumber(st.startedAt) or 0,
         project = st.project or "",
         sessionId = st.sessionId or "",
+        tokens = (eff == "idle") and 0 or (tonumber(st.tokens) or 0),
+        cost = (eff == "idle") and 0 or (tonumber(st.cost) or 0),
       }
     end
 
@@ -778,6 +798,7 @@ gears.timer {
 
     local sig = cur.state .. "|" .. (cur.label or "") .. "|" .. tostring(cur.startedAt)
     if cfg.show_aggregate then sig = sig .. "|" .. agg_total .. "|" .. agg_working end
+    if cfg.show_tokens then sig = sig .. "|" .. tostring(cur.tokens) .. "|" .. tostring(cur.cost) end
     if live or sig ~= applied_sig then
       applied_sig = sig
       apply()
@@ -1023,6 +1044,8 @@ local function build_settings_menu()
         function() cfg.show_timer = not cfg.show_timer; save_settings(); apply() end },
       { check(cfg.show_aggregate) .. "Show session badge",
         function() cfg.show_aggregate = not cfg.show_aggregate; save_settings(); apply() end },
+      { check(cfg.show_tokens) .. "Show tokens / cost",
+        function() cfg.show_tokens = not cfg.show_tokens; save_settings(); apply() end },
       { check(cfg.notify_permission) .. "Notify on permission",
         function() cfg.notify_permission = not cfg.notify_permission; save_settings() end },
       { check(cfg.notify_permission_actions) .. "Yes/No buttons on permission",

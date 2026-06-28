@@ -100,8 +100,9 @@ local claude_status = require("ui.bar.widgets.claude_status")
   A session whose window is known shows a `↗` hint and is **clickable** — clicking it
   jumps to that terminal window (switches tag, unminimizes, raises and focuses it).
 - **Right click** — the **settings menu**: pick the animation style (Crab / Clawd emotes /
-  Spark / Claude Code glyphs), toggle the timer, the session badge, audible feedback
-  (**Play sounds**), and the permission/done/long-turn/outage notifications.
+  Spark / Claude Code glyphs), toggle the timer, the session badge, the per-turn
+  tokens/cost readout, audible feedback (**Play sounds**), and the
+  permission/done/long-turn/outage notifications.
   Picks are persisted to `~/.claude/statusbar/widget.json` and override the `cfg`
   defaults, so they survive an Awesome restart. (Changing the style triggers a quick
   Awesome restart, since each style builds its icon differently.)
@@ -173,6 +174,7 @@ it in `cfg` if you really need to.
 | `icon_size` | `dpi(18)` | Icon height/width |
 | `show_timer` | `true` | Show the `1m 1s` elapsed clock |
 | `show_aggregate` | `false` | When >1 session is open, append a compact `N · M working` badge to the label (full breakdown stays in the click-to-open menu) |
+| `show_tokens` | `false` | Append the current turn's token count + estimated cost to the label (e.g. `1.2k tok · $0.04`), derived from the transcript by the hooks |
 | `hide_when_idle` | `false` | Hide the widget at idle (vs. resting logo) |
 | `notify_permission` | `true` | `naughty` popup on permission requests |
 | `notify_permission_actions` | `true` | Add **Yes**/**No** buttons to that popup (needs `xdotool` + a captured window id). Clicking focuses the session's terminal and presses the matching key. |
