@@ -156,6 +156,7 @@ it in `cfg` if you really need to.
 | `down` | `"#e5484d"` | "Claude service down" dot color |
 | `icon_size` | `dpi(18)` | Icon height/width |
 | `show_timer` | `true` | Show the `1m 1s` elapsed clock |
+| `show_aggregate` | `false` | When >1 session is open, append a compact `N · M working` badge to the label (full breakdown stays in the click-to-open menu) |
 | `hide_when_idle` | `false` | Hide the widget at idle (vs. resting logo) |
 | `notify_permission` | `true` | `naughty` popup on permission requests |
 | `notify_permission_actions` | `true` | Add **Yes**/**No** buttons to that popup (needs `xdotool` + a captured window id). Clicking focuses the session's terminal and presses the matching key. |

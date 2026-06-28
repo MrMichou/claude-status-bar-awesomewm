@@ -29,6 +29,9 @@ local cfg = {
   down           = "#e5484d",    -- "Claude service down" dot (Anthropic Statuspage incident)
   icon_size      = dpi(18),
   show_timer     = true,
+  -- When several sessions run at once, append a compact "N · M working" badge to the
+  -- label so multi-session activity shows on the bar (full breakdown stays in the menu).
+  show_aggregate = false,
   hide_when_idle = false,        -- false: show the resting logo at idle (like macOS)
   notify_permission = true,
   notify_done       = true,
@@ -84,6 +87,7 @@ local CODE = { glyphs = { "✻", "✽", "✶", "✳", "✢" }, sub = 18, dip = 0
 local SETTINGS_SCHEMA = {
   style = "string", brand = "string", amber = "string", down = "string",
   icon_size = "number", hide_when_idle = "boolean", show_timer = "boolean",
+  show_aggregate = "boolean",
   notify_permission = "boolean", notify_done = "boolean",
   notify_permission_actions = "boolean", notify_service = "boolean",
   permission_yes_key = "string", permission_no_key = "string",
@@ -95,7 +99,7 @@ local SETTINGS_SCHEMA = {
 -- Keys the right-click settings menu manages: save_settings() writes these from cfg
 -- and round-trips every other key the user hand-edited into widget.json.
 local MENU_KEYS = {
-  "style", "show_timer", "notify_permission", "notify_done",
+  "style", "show_timer", "show_aggregate", "notify_permission", "notify_done",
   "notify_permission_actions", "notify_service", "notify_long_turn",
 }
 local settings_path = os.getenv("HOME") .. "/.claude/statusbar/widget.json"
@@ -147,6 +151,36 @@ local function open_session_count()
     end
   end)
   return n
+end
+
+-- Aggregate for the optional bar badge: total open sessions + how many are actively
+-- working (thinking/tool). Reads each session-state file, so it only runs on the throttled
+-- SESSION_EVERY cadence (see the poll loop), never every poll. Returns total, working.
+local sess_state_for_badge = os.getenv("HOME") .. "/.claude/statusbar/sessions-state/"
+local function session_summary()
+  local total, working = 0, 0
+  pcall(function()
+    local Gio = lgi.Gio
+    local en = Gio.File.new_for_path(sessions_marker_dir)
+      :enumerate_children("standard::name", Gio.FileQueryInfoFlags.NONE)
+    if not en then return end
+    while true do
+      local info = en:next_file(); if not info then break end
+      local name = info:get_name()
+      if not name:match("%.") then
+        total = total + 1
+        local f = io.open(sess_state_for_badge .. name .. ".json", "r")
+        if f then
+          local raw = f:read("*a"); f:close()
+          local t = json.decode(raw)
+          if type(t) == "table" and (t.state == "thinking" or t.state == "tool") then
+            working = working + 1
+          end
+        end
+      end
+    end
+  end)
+  return total, working
 end
 
 -- Paint `color` through an alpha-mask PNG -> a colored cairo surface (the macOS tint).
@@ -284,6 +318,7 @@ local prev_state = nil
 local turn_started = 0 -- remembered while >0 so we know the turn length at "done"
 local active_set = nil -- the clawd loop currently on screen; restart frame_i when it changes
 local fidgeting = false -- clawd only: an idle "fidget" walk is currently playing (owns the icon)
+local agg_total, agg_working = 0, 0 -- multi-session badge counts, refreshed on the SESSION_EVERY cadence
 
 -- The frame set to animate for the current state. Static styles always return `frames`;
 -- the clawd style swaps loops so the animation tracks what Claude is doing.
@@ -345,11 +380,19 @@ local anim_timer = gears.timer {
 -- once a second. Cache the last text so we hit the textbox (markup reset + reflow) only when
 -- the displayed string — seconds included — actually changes.
 local last_label_text = nil
+-- Compact multi-session suffix, e.g. "  3 · 2 working" (or "  3 sessions" when none are
+-- actively working). Empty unless show_aggregate is on and more than one session is open.
+local function agg_badge()
+  if not cfg.show_aggregate or agg_total <= 1 then return "" end
+  if agg_working > 0 then return string.format("  %d · %d working", agg_total, agg_working) end
+  return string.format("  %d sessions", agg_total)
+end
 local function set_label(base, startedAt)
   local text = base or ""
   if cfg.show_timer and startedAt and startedAt > 0 then
     text = text .. "  " .. fmt_elapsed(startedAt)
   end
+  text = text .. agg_badge()
   if text == last_label_text then return end
   last_label_text = text
   label.markup = ""
@@ -679,7 +722,13 @@ gears.timer {
     -- fresh write (mtime change ⇒ a session is alive) or every SESSION_EVERY polls.
     if changed or session_ticks <= 0 then
       session_ticks = SESSION_EVERY
-      no_session = (open_session_count() == 0)
+      if cfg.show_aggregate then
+        -- session_summary() also gives us the open count, so we don't pay for both.
+        agg_total, agg_working = session_summary()
+        no_session = (agg_total == 0)
+      else
+        no_session = (open_session_count() == 0)
+      end
     else
       session_ticks = session_ticks - 1
     end
@@ -709,6 +758,7 @@ gears.timer {
     end
 
     local sig = cur.state .. "|" .. (cur.label or "") .. "|" .. tostring(cur.startedAt)
+    if cfg.show_aggregate then sig = sig .. "|" .. agg_total .. "|" .. agg_working end
     if live or sig ~= applied_sig then
       applied_sig = sig
       apply()
@@ -952,6 +1002,8 @@ local function build_settings_menu()
       } },
       { check(cfg.show_timer) .. "Show timer",
         function() cfg.show_timer = not cfg.show_timer; save_settings(); apply() end },
+      { check(cfg.show_aggregate) .. "Show session badge",
+        function() cfg.show_aggregate = not cfg.show_aggregate; save_settings(); apply() end },
       { check(cfg.notify_permission) .. "Notify on permission",
         function() cfg.notify_permission = not cfg.notify_permission; save_settings() end },
       { check(cfg.notify_permission_actions) .. "Yes/No buttons on permission",
