@@ -1031,10 +1031,47 @@ root:buttons(gears.table.join(
   awful.button({}, 3, toggle_settings_menu)
 ))
 
+-- Session windows that can be jumped to (have a captured window id), in sorted-id order.
+local function session_windows()
+  local list = {}
+  for _, m in ipairs(list_dir(marker_dir)) do
+    if not m:match("%.") then -- markers are bare ids (skip .tmp/.json)
+      local w = read_window_id(m)
+      if w then list[#list + 1] = { id = m, winid = w } end
+    end
+  end
+  table.sort(list, function(a, b) return a.id < b.id end)
+  return list
+end
+
+-- Jump to a specific session's terminal by id. Returns true if it had a window we focused.
+local cycle_last = nil -- last session we focused, so cycle can advance when focus left the set
+local function focus_session_by_id(id)
+  local w = id and read_window_id(id) or nil
+  if w and focus_window(w) then cycle_last = id; return true end
+  return false
+end
+
+-- Focus the next session window after the currently-focused one (or after the last one we
+-- jumped to), wrapping around. Lets you tab through Claude terminals without the mouse.
+local function cycle_sessions()
+  local list = session_windows()
+  if #list == 0 then return false end
+  local cur_win = client.focus and client.focus.window
+  local idx = 0 -- 0 ⇒ not currently on a session window; idx%#list+1 then starts at the first
+  for i, s in ipairs(list) do
+    if (cur_win and s.winid == cur_win) or (not cur_win and s.id == cycle_last) then idx = i; break end
+  end
+  return focus_session_by_id(list[idx % #list + 1].id)
+end
+
 -- Exposed so you can bind keys, e.g.:
 --   awful.key({ modkey }, "z", function() require("ui.bar.widgets.claude_status").toggle_sessions_menu() end)
+--   awful.key({ modkey }, "c", function() require("ui.bar.widgets.claude_status").cycle_sessions() end)
 root.toggle_sessions_menu = toggle_menu
 root.toggle_settings_menu = toggle_settings_menu
+root.cycle_sessions = cycle_sessions
+root.focus_session_by_id = focus_session_by_id
 
 apply()
 
