@@ -111,4 +111,57 @@ describe("update.js — event → state mapping", () => {
     await runHook("update.js", "prompt", { session_id: "s1" }, { HOME: h.home, CLAUDE_STATUSBAR_DEBUG: "1" });
     expect(exists(h.statusbar, "hooks.log")).toBe(true);
   });
+
+  describe("token / cost from transcript (#21)", () => {
+    // Write a JSONL transcript: a user prompt, then assistant turns carrying usage.
+    const writeTranscript = (lines) => {
+      const p = path.join(h.home, "conv.jsonl");
+      fs.writeFileSync(p, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+      return p;
+    };
+    const usage = (u) => ({ type: "assistant", message: { model: "claude-opus-4-8", usage: u } });
+
+    it("sums the current turn's output tokens and estimates cost", async () => {
+      const tr = writeTranscript([
+        { type: "user", message: { content: "do a thing" } },
+        usage({ input_tokens: 100, output_tokens: 400, cache_read_input_tokens: 10000, cache_creation_input_tokens: 2000 }),
+        usage({ input_tokens: 50, output_tokens: 600, cache_read_input_tokens: 12000, cache_creation_input_tokens: 0 }),
+      ]);
+      await run("post", { session_id: "s1", transcript_path: tr });
+      const s = readState(h.statusbar);
+      expect(s.tokens).toBe(1000); // 400 + 600 output tokens this turn
+      // cost = (150*5 + 1000*25 + 2000*6.25 + 22000*0.5) / 1e6 USD
+      const expected = (150 * 5 + 1000 * 25 + 2000 * 6.25 + 22000 * 0.5) / 1e6;
+      expect(s.cost).toBeCloseTo(expected, 6);
+    });
+
+    it("counts only the latest turn (resets at the last user prompt)", async () => {
+      const tr = writeTranscript([
+        { type: "user", message: { content: "first turn" } },
+        usage({ output_tokens: 5000 }),
+        { type: "user", message: { content: "second turn" } },
+        usage({ output_tokens: 700 }),
+      ]);
+      await run("post", { session_id: "s1", transcript_path: tr });
+      expect(readState(h.statusbar).tokens).toBe(700);
+    });
+
+    it("does not count tool_result user messages as a turn boundary", async () => {
+      const tr = writeTranscript([
+        { type: "user", message: { content: "go" } },
+        usage({ output_tokens: 300 }),
+        { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t1", content: "ok" }] } },
+        usage({ output_tokens: 200 }),
+      ]);
+      await run("post", { session_id: "s1", transcript_path: tr });
+      expect(readState(h.statusbar).tokens).toBe(500); // both assistant turns counted
+    });
+
+    it("prompt resets tokens/cost to 0", async () => {
+      await run("prompt", { session_id: "s1" });
+      const s = readState(h.statusbar);
+      expect(s.tokens).toBe(0);
+      expect(s.cost).toBe(0);
+    });
+  });
 });
