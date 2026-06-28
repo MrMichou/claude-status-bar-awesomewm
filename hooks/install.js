@@ -26,6 +26,11 @@ fs.mkdirSync(sbDir, { recursive: true });
 fs.rmSync(path.join(sbDir, "watcher.sh"), { force: true });
 fs.copyFileSync(path.join(__dirname, "update.js"), updateDest);
 fs.copyFileSync(path.join(__dirname, "lifecycle.js"), lifecycleDest);
+// Bundled completion sound for the widget's optional audible feedback (off by default).
+// Best-effort: a missing asset must never fail the hook install.
+try {
+  fs.copyFileSync(path.join(__dirname, "..", "assets", "completion.mp3"), path.join(sbDir, "completion.mp3"));
+} catch {}
 
 const cmd = (evt) => `${node} ${updateDest} ${evt}`;
 const life = (evt) => `${node} ${lifecycleDest} ${evt}`;

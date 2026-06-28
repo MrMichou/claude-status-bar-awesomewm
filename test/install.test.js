@@ -34,6 +34,11 @@ describe("install.js — merging into settings.json", () => {
     expect(exists(h.statusbar, "lifecycle.js")).toBe(true);
   });
 
+  it("installs the bundled completion sound", async () => {
+    await install();
+    expect(exists(h.statusbar, "completion.mp3")).toBe(true);
+  });
+
   it("preserves a pre-existing third-party hook", async () => {
     const thirdParty = {
       hooks: {
