@@ -36,6 +36,9 @@ Awesome 4.3+ (it uses <code>awful.keyboard.append_global_keybindings</code>,
 - `curl` — optional, only for the **Claude service down** indicator (it polls the
   Anthropic Statuspage); without it the service check is silently disabled and the rest
   of the widget works unchanged
+- `paplay` (PulseAudio/PipeWire) — optional, only for the **Play sounds** option; any
+  other player works via the `sound_player` config key. The bundled `completion.mp3` is
+  installed to `~/.claude/statusbar/` by the hooks
 
 ## Install
 
@@ -97,8 +100,8 @@ local claude_status = require("ui.bar.widgets.claude_status")
   A session whose window is known shows a `↗` hint and is **clickable** — clicking it
   jumps to that terminal window (switches tag, unminimizes, raises and focuses it).
 - **Right click** — the **settings menu**: pick the animation style (Crab / Clawd emotes /
-  Spark / Claude Code glyphs), toggle the timer, and toggle the permission/done/outage
-  notifications.
+  Spark / Claude Code glyphs), toggle the timer, the session badge, audible feedback
+  (**Play sounds**), and the permission/done/long-turn/outage notifications.
   Picks are persisted to `~/.claude/statusbar/widget.json` and override the `cfg`
   defaults, so they survive an Awesome restart. (Changing the style triggers a quick
   Awesome restart, since each style builds its icon differently.)
@@ -179,7 +182,11 @@ it in `cfg` if you really need to.
 | `done_min_seconds` | `60` | Only notify "done" for turns at least this long (`0` = always) |
 | `notify_long_turn` | `false` | One-shot "Still working — Nm elapsed" `naughty` popup when a turn runs long (fires once per turn, re-arms on the next) |
 | `long_turn_seconds` | `300` | How long a live turn must run before the long-turn nudge fires |
-| `sound_cmd` | `nil` | Shell command to play on completion, e.g. `"paplay /usr/share/sounds/freedesktop/stereo/complete.oga"` |
+| `play_sounds` | `false` | Play a sound on done / permission (array spawn via `sound_player`, no shell). Off by default |
+| `sound_player` | `"paplay"` | Player invoked as `{ sound_player, <file> }` |
+| `done_sound` | `…/statusbar/completion.mp3` | Sound played when a turn finishes (the bundled `completion.mp3` installed by the hooks) |
+| `permission_sound` | `nil` | Distinct sound for permission requests; falls back to `done_sound` when unset |
+| `sound_cmd` | `nil` | **Advanced** custom *shell* command; if set, it overrides `done_sound` for done **and** plays on a service outage, e.g. `"paplay /usr/share/sounds/freedesktop/stereo/complete.oga"` |
 | `poll_seconds` | `0.4` | `state.json` poll interval |
 | `check_service` | `true` | Poll the Anthropic Statuspage and show "Claude down" during an incident (needs `curl`) |
 | `service_url` | `"https://status.claude.com/api/v2/status.json"` | Statuspage endpoint to poll |
