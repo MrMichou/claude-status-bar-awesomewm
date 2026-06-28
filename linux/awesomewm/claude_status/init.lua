@@ -406,15 +406,21 @@ local function fmt_tokens(n)
   if n >= 1000 then return string.format("%.1fk", n / 1000) end
   return tostring(math.floor(n))
 end
-local function tok_badge()
-  if not cfg.show_tokens or cur.state ~= "done" then return "" end
-  if not cur.tokens or cur.tokens <= 0 then return "" end
-  local seg = "  " .. fmt_tokens(cur.tokens) .. " tok"
-  if cur.cost and cur.cost > 0 then
-    local c = (cur.cost >= 0.1) and string.format("$%.2f", cur.cost) or string.format("$%.3f", cur.cost)
+-- "1.2k tok · $0.04" for present values, "" otherwise. No state gating: the
+-- caller decides when to show it (inline badge vs. per-session popup row).
+local function fmt_tok_cost(tokens, cost)
+  if not tokens or tokens <= 0 then return "" end
+  local seg = fmt_tokens(tokens) .. " tok"
+  if cost and cost > 0 then
+    local c = (cost >= 0.1) and string.format("$%.2f", cost) or string.format("$%.3f", cost)
     seg = seg .. " · " .. c
   end
   return seg
+end
+local function tok_badge()
+  if not cfg.show_tokens or cur.state ~= "done" then return "" end
+  local seg = fmt_tok_cost(cur.tokens, cur.cost)
+  return seg == "" and "" or ("  " .. seg)
 end
 local function set_label(base, startedAt)
   local text = base or ""
@@ -915,6 +921,28 @@ local function session_row(info, winid)
   if info.startedAt and info.startedAt > 0 then sub = sub .. "  ·  " .. fmt_elapsed(info.startedAt) end
   -- Rows with a known window get a hint glyph and become clickable to jump to it.
   local hint = winid and " <span foreground='#666'>↗</span>" or ""
+  local lines = {
+    {
+      markup = "<b>" .. gears.string.xml_escape(title) .. "</b>" .. hint,
+      font = beautiful.font_name .. "Medium 10",
+      widget = wibox.widget.textbox,
+    },
+    {
+      markup = "<span foreground='#aaaaaa'>" .. gears.string.xml_escape(sub) .. "</span>",
+      font = beautiful.font_name .. "9",
+      widget = wibox.widget.textbox,
+    },
+    layout = wibox.layout.fixed.vertical,
+  }
+  -- token / cost on its own line beneath the state.
+  local tc = fmt_tok_cost(info.tokens, info.cost)
+  if tc ~= "" then
+    table.insert(lines, {
+      markup = "<span foreground='#888888'>" .. gears.string.xml_escape(tc) .. "</span>",
+      font = beautiful.font_name .. "9",
+      widget = wibox.widget.textbox,
+    })
+  end
   local row = wibox.widget {
     {
       {
@@ -923,19 +951,7 @@ local function session_row(info, winid)
         valign = "center",
         widget = wibox.widget.imagebox,
       },
-      {
-        {
-          markup = "<b>" .. gears.string.xml_escape(title) .. "</b>" .. hint,
-          font = beautiful.font_name .. "Medium 10",
-          widget = wibox.widget.textbox,
-        },
-        {
-          markup = "<span foreground='#aaaaaa'>" .. gears.string.xml_escape(sub) .. "</span>",
-          font = beautiful.font_name .. "9",
-          widget = wibox.widget.textbox,
-        },
-        layout = wibox.layout.fixed.vertical,
-      },
+      lines,
       spacing = dpi(10),
       layout = wibox.layout.fixed.horizontal,
     },
