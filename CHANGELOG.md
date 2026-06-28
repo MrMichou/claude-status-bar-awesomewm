@@ -5,6 +5,8 @@ All notable changes to Claude Status Bar are documented here. This project follo
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-28
+
 ### Added
 - **`clawd` sleeping idle emote.** When nothing is running (no open session), the dynamic `clawd` style now plays a **sleeping** crab — nightcap on, tucked in bed, breathing gently — in place of the static rest crab. Artwork from [xixicc186/clawd-emotes-skill](https://github.com/xixicc186/clawd-emotes-skill).
 - **Completion / permission sounds.** Optional audible feedback wires up the bundled `completion.mp3` (now installed to `~/.claude/statusbar/` by the hooks): a sound on turn-done and a distinct one on permission requests, played via array-based `awful.spawn` (`{ sound_player, file }`, no shell). Off by default (`play_sounds`); a custom `sound_cmd` still takes precedence for back-compat. New "Play sounds" toggle in the settings menu. (#18)
