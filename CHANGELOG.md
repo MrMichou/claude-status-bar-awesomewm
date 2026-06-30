@@ -5,6 +5,8 @@ All notable changes to Claude Status Bar are documented here. This project follo
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-30
+
 ### Added
 - **Left-click press bounce.** Left-clicking the widget now gives tactile feedback: the icon dips on press and springs back with a slight overshoot on release. Implemented as a single `press_scale` multiplier that every icon-sizing path honours (imagebox `forced_*` for the crab/web/clawd styles, font size for the `code` style), so it works across all styles and the 0.4s poll never clobbers mid-bounce.
 
