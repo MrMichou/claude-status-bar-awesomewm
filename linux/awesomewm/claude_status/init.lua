@@ -1106,7 +1106,8 @@ local function render_icon_scale()
   icon.forced_width = sz; icon.forced_height = sz
 end
 local spring_i = 0
-local spring_timer = gears.timer {
+local spring_timer -- forward-declared so the callback can self-stop on the last frame
+spring_timer = gears.timer {
   timeout = 0.02,
   callback = function()
     spring_i = spring_i + 1
