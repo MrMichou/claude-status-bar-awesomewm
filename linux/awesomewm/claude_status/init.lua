@@ -330,6 +330,7 @@ local prev_state = nil
 local turn_started = 0 -- remembered while >0 so we know the turn length at "done"
 local active_set = nil -- the clawd loop currently on screen; restart frame_i when it changes
 local fidgeting = false -- clawd only: an idle "fidget" walk is currently playing (owns the icon)
+local press_scale = 1 -- left-click "press" bounce: a multiplier every icon-sizing path respects
 local agg_total, agg_working = 0, 0 -- multi-session badge counts, refreshed on the SESSION_EVERY cadence
 
 -- The frame set to animate for the current state. Static styles always return `frames`;
@@ -364,11 +365,11 @@ local function set_code_icon(frame, color)
   local i = math.floor(frame / CODE.sub) % #CODE.glyphs
   local lt = (frame % CODE.sub + 0.5) / CODE.sub
   local scale = CODE.dip + (1 - CODE.dip) * code_env(lt)
-  icon.font = beautiful.font_name .. string.format("%.1f", math.max(1, CODE.base_pt * scale))
+  icon.font = beautiful.font_name .. string.format("%.1f", math.max(1, CODE.base_pt * scale * press_scale))
   icon.markup = string.format("<span color='%s'>%s</span>", color, CODE.glyphs[i + 1])
 end
 local function code_static(glyph, color)
-  icon.font = beautiful.font_name .. string.format("%.1f", CODE.base_pt)
+  icon.font = beautiful.font_name .. string.format("%.1f", CODE.base_pt * press_scale)
   icon.markup = string.format("<span color='%s'>%s</span>", color, glyph)
 end
 
@@ -472,7 +473,7 @@ local function apply()
     if is_clawd then
       -- the idle sleeping emote sits smaller than the working emotes; size the slot to match.
       local sz = (s == "idle") and CLAWD_SLEEP_SIZE or CLAWD_WORK_SIZE
-      icon.forced_width = dpi(sz); icon.forced_height = dpi(sz)
+      icon.forced_width = math.floor(dpi(sz) * press_scale); icon.forced_height = math.floor(dpi(sz) * press_scale)
       icon_slot.top = (s == "idle") and dpi(4) or dpi(2)
     end
     if is_code then set_code_icon(frame_i, cfg.brand) else icon.image = set[frame_i] or resting end
@@ -494,7 +495,7 @@ local function apply()
   else
     animating = false; anim_timer:stop()
     if is_clawd then
-      icon.forced_width = cfg.icon_size; icon.forced_height = cfg.icon_size
+      icon.forced_width = math.floor(cfg.icon_size * press_scale); icon.forced_height = math.floor(cfg.icon_size * press_scale)
       icon_slot.top = dpi(6) -- rest crab sits low again
     end
     if s == "permission" then
@@ -735,9 +736,11 @@ local session_ticks = 0  -- countdown to the next sessions.d re-enumeration
 local no_session = false -- cached "no session open" (drives the idle/sleeping crab)
 local SESSION_EVERY = 5  -- re-enumerate sessions.d at most every N polls (~2s) at idle
 local long_turn_notified = 0 -- startedAt we already nudged for (dedupe the long-turn notification)
-gears.timer {
+-- Kept in a local so we can fire the first poll *explicitly* at the end of the module — see
+-- the emit_signal call below. (call_now would run it here, before read_window_id/focus_window
+-- are defined further down, which crashes when a session is already awaiting permission.)
+local poll_timer = gears.timer {
   timeout = cfg.poll_seconds,
-  call_now = true,
   autostart = true,
   callback = function()
     -- nil mtime (absent file or a failed stat) forces an unconditional read, so the gate
@@ -1088,9 +1091,37 @@ local function toggle_settings_menu()
   settings_m:show()
 end
 
--- Left click → active-sessions popup; right click → settings menu.
+-- Left-click "press" bounce: dip the icon on press, spring it back (with a slight overshoot)
+-- on release. press_scale is a plain multiplier the icon-sizing paths already honor, so we just
+-- nudge it and re-render the icon at its current natural size — works across every style.
+local PRESS_DIP = 0.86
+local SPRING = { 0.86, 0.90, 0.96, 1.04, 1.07, 1.05, 1.0 } -- played one value per tick on release
+local function render_icon_scale()
+  if is_code then apply(); return end -- code sizes via font; apply() re-renders with press_scale
+  local base = cfg.icon_size
+  if is_clawd and animating then
+    base = (cur.state == "idle") and dpi(CLAWD_SLEEP_SIZE) or dpi(CLAWD_WORK_SIZE)
+  end
+  local sz = math.floor(base * press_scale)
+  icon.forced_width = sz; icon.forced_height = sz
+end
+local spring_i = 0
+local spring_timer -- forward-declared so the callback can self-stop on the last frame
+spring_timer = gears.timer {
+  timeout = 0.02,
+  callback = function()
+    spring_i = spring_i + 1
+    press_scale = SPRING[spring_i] or 1
+    render_icon_scale()
+    if spring_i >= #SPRING then press_scale = 1; render_icon_scale(); spring_timer:stop() end
+  end,
+}
+local function bounce_press() spring_timer:stop(); press_scale = PRESS_DIP; render_icon_scale() end
+local function bounce_release() spring_i = 0; spring_timer:again() end
+
+-- Left click → active-sessions popup (+ press bounce); right click → settings menu.
 root:buttons(gears.table.join(
-  awful.button({}, 1, toggle_menu),
+  awful.button({}, 1, function() bounce_press(); toggle_menu() end, function() bounce_release() end),
   awful.button({}, 3, toggle_settings_menu)
 ))
 
@@ -1136,6 +1167,8 @@ root.toggle_settings_menu = toggle_settings_menu
 root.cycle_sessions = cycle_sessions
 root.focus_session_by_id = focus_session_by_id
 
-apply()
+-- Initial render: run the poll once now (read_window_id/focus_window are defined by this point,
+-- so an at-startup "permission" state can safely build its Yes/No actions). Replaces call_now.
+poll_timer:emit_signal("timeout")
 
 return root
