@@ -5,6 +5,12 @@ All notable changes to Claude Status Bar are documented here. This project follo
 
 ## [Unreleased]
 
+### Added
+- **Left-click press bounce.** Left-clicking the widget now gives tactile feedback: the icon dips on press and springs back with a slight overshoot on release. Implemented as a single `press_scale` multiplier that every icon-sizing path honours (imagebox `forced_*` for the crab/web/clawd styles, font size for the `code` style), so it works across all styles and the 0.4s poll never clobbers mid-bounce.
+
+### Fixed
+- **Startup crash when a session was already awaiting permission.** The poll timer's `call_now` fired the initial render synchronously at load — before `read_window_id`/`focus_window` were defined further down — so an at-startup `permission` state crashed building the notification's Yes/No actions (`attempt to call a nil value (upvalue 'read_window_id')`). The first poll is now triggered explicitly at the end of the module, once those functions exist.
+
 ## [0.4.0] - 2026-06-28
 
 ### Added
