@@ -14,7 +14,9 @@ glance, whether Claude is working, waiting on you, or done._
 
 ## What it shows
 
-- **Thinking / working** — the icon animates, with a live `1m 1s` timer.
+- **Thinking / working** — the icon animates, with a live `1m 1s` timer. The label
+  rotates a playful verb (`Manifesting…`, `Percolating…`, …) per turn — toggle off with
+  `cfg.thinking_words = false` for a plain `Thinking…`.
 - **Running a tool** — a short label (`Editing`, `Reading`, `Running command`, …).
 - **Awaiting permission** — a paused amber dot (no timer).
 - **Claude service down** — a red dot + "Claude down" with the incident description

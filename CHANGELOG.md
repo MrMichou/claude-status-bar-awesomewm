@@ -5,6 +5,9 @@ All notable changes to Claude Status Bar are documented here. This project follo
 
 ## [Unreleased]
 
+### Added
+- **Rotating "thinking words".** While Claude thinks, the label now rotates a playful verb (`Manifesting…`, `Percolating…`, `Pondering…`, …) instead of a static `Thinking…`, matching the macOS original. The word is picked deterministically from the turn's start time, so it holds steady for the whole turn rather than flickering on each poll. On by default; toggle via the right-click menu or `cfg.thinking_words`. (#59)
+
 ## [0.6.0] - 2026-07-04
 
 ### Added

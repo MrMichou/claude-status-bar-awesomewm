@@ -29,6 +29,12 @@ local cfg = {
   down           = "#e5484d",    -- "Claude service down" dot (Anthropic Statuspage incident)
   icon_size      = dpi(18),
   show_timer     = true,
+  -- Rotate a playful verb ("Manifesting…", "Percolating…", …) in place of the plain
+  -- "Thinking…" label while Claude thinks, like the macOS app. On by default. The word is
+  -- picked deterministically from the turn's startedAt, so it stays stable for the whole
+  -- turn instead of flickering every poll tick. Tool labels (Editing, Reading, …) are
+  -- unaffected — this only replaces the generic thinking label.
+  thinking_words = true,
   -- When several sessions run at once, append a compact "N · M working" badge to the
   -- label so multi-session activity shows on the bar (full breakdown stays in the menu).
   show_aggregate = false,
@@ -97,6 +103,7 @@ local CODE = { glyphs = { "✻", "✽", "✶", "✳", "✢" }, sub = 18, dip = 0
 local SETTINGS_SCHEMA = {
   style = "string", brand = "string", amber = "string", down = "string",
   icon_size = "number", hide_when_idle = "boolean", show_timer = "boolean",
+  thinking_words = "boolean",
   show_aggregate = "boolean", show_tokens = "boolean",
   notify_permission = "boolean", notify_done = "boolean",
   notify_permission_actions = "boolean", notify_service = "boolean",
@@ -111,7 +118,7 @@ local SETTINGS_SCHEMA = {
 -- Keys the right-click settings menu manages: save_settings() writes these from cfg
 -- and round-trips every other key the user hand-edited into widget.json.
 local MENU_KEYS = {
-  "style", "show_timer", "show_aggregate", "show_tokens", "notify_permission", "notify_done",
+  "style", "show_timer", "thinking_words", "show_aggregate", "show_tokens", "notify_permission", "notify_done",
   "notify_permission_actions", "notify_service", "notify_long_turn", "play_sounds",
 }
 local settings_path = os.getenv("HOME") .. "/.claude/statusbar/widget.json"
@@ -457,6 +464,21 @@ local function tok_badge()
   local seg = fmt_tok_cost(cur.tokens, cur.cost)
   return seg == "" and "" or ("  " .. seg)
 end
+-- Playful gerunds shown in place of "Thinking…" when cfg.thinking_words is on, echoing the
+-- macOS app's rotating verbs. Kept whimsical but readable; the trailing "…" is added below.
+local THINKING_WORDS = {
+  "Thinking", "Manifesting", "Percolating", "Pondering", "Cogitating", "Ruminating",
+  "Musing", "Noodling", "Simmering", "Brewing", "Conjuring", "Marinating", "Mulling",
+  "Synthesizing", "Deliberating", "Incubating", "Coalescing", "Reticulating", "Vibing",
+  "Wrangling", "Puzzling", "Crunching", "Spelunking",
+}
+-- The verb for the current turn: deterministic from startedAt so it holds steady for the whole
+-- turn (no flicker on each poll) yet varies turn to turn. Falls back to "Thinking…" without a start.
+local function thinking_word(startedAt)
+  if not startedAt or startedAt <= 0 then return "Thinking…" end
+  local i = (math.floor(startedAt) % #THINKING_WORDS) + 1
+  return THINKING_WORDS[i] .. "…"
+end
 local function set_label(base, startedAt)
   local text = base or ""
   if cfg.show_timer and startedAt and startedAt > 0 then
@@ -522,7 +544,12 @@ local function apply()
       set_label("", 0)
       root.visible = not cfg.hide_when_idle
     else
-      local base = (cur.label ~= "" and cur.label) or (s == "tool" and "Working…" or "Thinking…")
+      local base
+      if s == "thinking" and cfg.thinking_words then
+        base = thinking_word(cur.startedAt) -- rotating verb replaces the plain thinking label
+      else
+        base = (cur.label ~= "" and cur.label) or (s == "tool" and "Working…" or "Thinking…")
+      end
       set_label(base, cur.startedAt)
       root.visible = true
     end
@@ -1098,6 +1125,8 @@ local function build_settings_menu()
       } },
       { check(cfg.show_timer) .. "Show timer",
         function() cfg.show_timer = not cfg.show_timer; save_settings(); apply() end },
+      { check(cfg.thinking_words) .. "Thinking words",
+        function() cfg.thinking_words = not cfg.thinking_words; save_settings(); apply() end },
       { check(cfg.show_aggregate) .. "Show session badge",
         function() cfg.show_aggregate = not cfg.show_aggregate; save_settings(); apply() end },
       { check(cfg.show_tokens) .. "Show tokens / cost",
