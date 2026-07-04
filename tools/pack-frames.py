@@ -47,14 +47,6 @@ def load_manifest(path):
         return {}
 
 
-def load_manifest(path):
-    try:
-        with open(path) as f:
-            return json.load(f)
-    except (OSError, ValueError):
-        return {}
-
-
 def pack():
     manifest_path = os.path.join(FRAMES, "sprites.json")
     # Merge into the existing manifest so packing a subset keeps the other sets' entries.
