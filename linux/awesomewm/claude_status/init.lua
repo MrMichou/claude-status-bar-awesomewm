@@ -147,8 +147,8 @@ local function make_dot(color, size)
 end
 
 -- Sprite manifest: each animation set ships as one horizontal strip (tools/pack-frames.py)
--- so the repo holds a handful of PNGs instead of ~300 loose frames. {n,w,h} per set keys
--- the strip back into per-frame surfaces in load_frame_dir below.
+-- so the repo holds a handful of PNGs instead of ~300 loose frames. Each set maps to its
+-- frame count `n`; the cell size is derived from the strip itself in load_frame_dir below.
 local sprites = (function()
   local f = io.open(frames_dir .. "sprites.json", "r")
   if not f then return {} end
@@ -174,19 +174,19 @@ end
 
 -- Load an animation set (`subdir` is its sprites.json key, e.g. "crab" or "clawd/thinking")
 -- as a list of per-frame surfaces, slicing it out of the set's strip. `tint_it` recolours
--- each frame (the web spark). Returns {} for an unknown/missing set.
+-- each frame (the web spark). Returns {} for an unknown set, a malformed manifest entry, or
+-- a missing/corrupt strip PNG, so callers fall back to the resting icon.
 local function load_frame_dir(subdir, tint_it)
-  local m = sprites[subdir]
-  -- Guard the manifest entry so a malformed sprites.json degrades to {} instead of crashing
-  -- awesome's whole config at module load via math.floor(nil).
-  if type(m) ~= "table" or type(m.n) ~= "number"
-    or type(m.w) ~= "number" or type(m.h) ~= "number" then return {} end
+  local n = sprites[subdir]
+  if type(n) ~= "number" or n < 1 then return {} end -- unknown set / malformed manifest
+  n = math.floor(n)
   -- load_uncached_silently returns (surface, err); on a missing/corrupt file err is set and
   -- the surface is a 0x0 placeholder (load_uncached would swallow the error and hand us that
   -- placeholder, silently yielding blank frames), so key off err to degrade gracefully.
   local sheet, err = gears.surface.load_uncached_silently(frames_dir .. subdir .. ".png")
   if err or not sheet then return {} end
-  local set = slice_strip(sheet, math.floor(m.n), math.floor(m.w), math.floor(m.h), tint_it)
+  -- Cell size is derived from the strip: h is the sheet height, w is one of n equal columns.
+  local set = slice_strip(sheet, n, math.floor(sheet:get_width() / n), sheet:get_height(), tint_it)
   sheet:finish() -- release the strip's pixel buffer now instead of waiting for a GC cycle
   return set
 end
