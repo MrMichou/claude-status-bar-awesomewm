@@ -157,21 +157,17 @@ local sprites = (function()
   return type(t) == "table" and t or {}
 end)()
 
--- Slice a horizontal sprite-strip into per-frame surfaces. With tint_it each cell is painted
--- in the brand colour through its own alpha (the macOS spark); otherwise it is copied as-is.
+-- Slice a horizontal sprite-strip into per-frame surfaces. Each cell is copied out at the
+-- origin; with tint_it the copied cell is recoloured through its own alpha via tint_surface
+-- (the macOS spark), reusing the one tint implementation instead of open-coding the mask.
 local function slice_strip(sheet, n, w, h, tint_it)
   local set = {}
   for i = 0, n - 1 do
-    local out = cairo.ImageSurface.create(cairo.Format.ARGB32, w, h)
-    local cr = cairo.Context(out)
-    if tint_it then
-      cr:set_source(gears.color(cfg.brand))
-      cr:mask_surface(sheet, -i * w, 0) -- sample the i-th cell's alpha
-    else
-      cr:set_source_surface(sheet, -i * w, 0) -- align the i-th cell to the origin
-      cr:paint()
-    end
-    set[#set + 1] = out
+    local cell = cairo.ImageSurface.create(cairo.Format.ARGB32, w, h)
+    local cr = cairo.Context(cell)
+    cr:set_source_surface(sheet, -i * w, 0) -- align the i-th cell to the origin
+    cr:paint()
+    set[#set + 1] = tint_it and tint_surface(cell, cfg.brand) or cell
   end
   return set
 end
