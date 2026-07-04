@@ -37,8 +37,19 @@ def frame_files(d):
     return sorted(f for f in os.listdir(d) if f.endswith(".png") and f[:-4].isdigit())
 
 
+def load_manifest(path):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
 def pack():
-    manifest = {}
+    manifest_path = os.path.join(FRAMES, "sprites.json")
+    # Merge into the existing manifest so packing a subset keeps the other sets' entries.
+    manifest = load_manifest(manifest_path)
+    packed = 0
     for key in SETS:
         src = os.path.join(FRAMES, key)
         if not os.path.isdir(src):
@@ -58,11 +69,15 @@ def pack():
         out = os.path.join(FRAMES, key + ".png")
         strip.save(out)
         manifest[key] = {"n": len(imgs), "w": w, "h": h}
+        packed += 1
         print(f"packed {key}: {len(imgs)} frames {w}x{h} -> {os.path.relpath(out)}")
-    with open(os.path.join(FRAMES, "sprites.json"), "w") as f:
+    if packed == 0:
+        sys.exit("no per-frame directories found; "
+                 "refusing to overwrite sprites.json with an empty manifest")
+    with open(manifest_path, "w") as f:
         json.dump(manifest, f, indent=2, sort_keys=True)
         f.write("\n")
-    print(f"wrote {os.path.join(FRAMES, 'sprites.json')}")
+    print(f"wrote {manifest_path}")
 
 
 if __name__ == "__main__":
