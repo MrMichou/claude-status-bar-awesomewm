@@ -178,8 +178,11 @@ end
 local function load_frame_dir(subdir, tint_it)
   local m = sprites[subdir]
   if not m then return {} end
-  local sheet = gears.surface.load_uncached(frames_dir .. subdir .. ".png")
-  if not sheet then return {} end
+  -- load_uncached_silently returns (surface, err); on a missing/corrupt file err is set and
+  -- the surface is a 0x0 placeholder (load_uncached would swallow the error and hand us that
+  -- placeholder, silently yielding blank frames), so key off err to degrade gracefully.
+  local sheet, err = gears.surface.load_uncached_silently(frames_dir .. subdir .. ".png")
+  if err or not sheet then return {} end
   return slice_strip(sheet, math.floor(m.n), math.floor(m.w), math.floor(m.h), tint_it)
 end
 
