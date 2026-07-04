@@ -25,6 +25,11 @@ local dpi = beautiful.xresources.apply_dpi
 local cfg = {
   style          = "crab",       -- "web" (Claude spark), "crab", or "code" (glyph spinner)
   brand          = "#d97757",    -- Anthropic orange, used to tint the alpha-mask frames
+  -- Icon color, echoing the macOS app's Orange/System setting. "brand" keeps `brand` above
+  -- (Anthropic orange, or a hand-edited hex); "theme" follows the wibar foreground
+  -- (beautiful.fg_normal) so the icon matches a light/dark awesomewm theme. Resolved once at
+  -- load — like a style change, switching it takes effect on the next awesome.restart().
+  icon_color     = "brand",      -- "brand" | "theme"
   amber          = "#f2bb2e",    -- "awaiting permission" dot
   down           = "#e5484d",    -- "Claude service down" dot (Anthropic Statuspage incident)
   icon_size      = dpi(18),
@@ -95,7 +100,7 @@ local CODE = { glyphs = { "✻", "✽", "✶", "✳", "✢" }, sub = 18, dip = 0
 -- the rest untouched (so a hand-edited color isn't wiped by a checkbox toggle).
 -- service_url is deliberately absent (potential SSRF vector) — it stays hardcoded.
 local SETTINGS_SCHEMA = {
-  style = "string", brand = "string", amber = "string", down = "string",
+  style = "string", brand = "string", icon_color = "string", amber = "string", down = "string",
   icon_size = "number", hide_when_idle = "boolean", show_timer = "boolean",
   show_aggregate = "boolean", show_tokens = "boolean",
   notify_permission = "boolean", notify_done = "boolean",
@@ -111,7 +116,7 @@ local SETTINGS_SCHEMA = {
 -- Keys the right-click settings menu manages: save_settings() writes these from cfg
 -- and round-trips every other key the user hand-edited into widget.json.
 local MENU_KEYS = {
-  "style", "show_timer", "show_aggregate", "show_tokens", "notify_permission", "notify_done",
+  "style", "icon_color", "show_timer", "show_aggregate", "show_tokens", "notify_permission", "notify_done",
   "notify_permission_actions", "notify_service", "notify_long_turn", "play_sounds",
 }
 local settings_path = os.getenv("HOME") .. "/.claude/statusbar/widget.json"
@@ -140,6 +145,15 @@ local function save_settings()
   f:write(enc); f:close()
 end
 load_settings()
+
+-- Resolve the effective icon tint once, up front. "theme" follows the wibar foreground so the
+-- icon tracks a light/dark awesomewm theme; "brand" (default) keeps `cfg.brand`. We fold the
+-- theme color into cfg.brand so every tint site (frames, code glyphs, notifications, session
+-- popup) picks it up unchanged. save_settings() round-trips the original hand-edited brand from
+-- raw_settings, so this in-memory override is never persisted back to widget.json.
+if cfg.icon_color == "theme" then
+  cfg.brand = beautiful.fg_normal or cfg.brand
+end
 
 local state_path = os.getenv("HOME") .. "/.claude/statusbar/state.json"
 local module_dir = (debug.getinfo(1, "S").source:match("^@(.*/)")) or "./"
@@ -1084,6 +1098,14 @@ local function set_style(s)
   awesome.restart()
 end
 
+local function set_icon_color(c)
+  if c == cfg.icon_color then return end
+  cfg.icon_color = c; save_settings()
+  -- The tint is baked into the frame surfaces at load, so (like a style switch) a clean
+  -- restart is the race-free way to recolor the icon.
+  awesome.restart()
+end
+
 local function bullet(on) return on and "● " or "○ " end
 local function check(on) return on and "✓ " or "    " end
 
@@ -1095,6 +1117,10 @@ local function build_settings_menu()
         { bullet(cfg.style == "clawd") .. "Clawd emotes",     function() set_style("clawd") end },
         { bullet(cfg.style == "web") .. "Claude spark",       function() set_style("web") end },
         { bullet(cfg.style == "code") .. "Claude Code glyphs", function() set_style("code") end },
+      } },
+      { "Icon color", {
+        { bullet(cfg.icon_color == "brand") .. "Orange (brand)", function() set_icon_color("brand") end },
+        { bullet(cfg.icon_color == "theme") .. "Theme (adaptive)", function() set_icon_color("theme") end },
       } },
       { check(cfg.show_timer) .. "Show timer",
         function() cfg.show_timer = not cfg.show_timer; save_settings(); apply() end },
