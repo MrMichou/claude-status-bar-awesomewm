@@ -177,7 +177,10 @@ end
 -- each frame (the web spark). Returns {} for an unknown/missing set.
 local function load_frame_dir(subdir, tint_it)
   local m = sprites[subdir]
-  if not m then return {} end
+  -- Guard the manifest entry so a malformed sprites.json degrades to {} instead of crashing
+  -- awesome's whole config at module load via math.floor(nil).
+  if type(m) ~= "table" or type(m.n) ~= "number"
+    or type(m.w) ~= "number" or type(m.h) ~= "number" then return {} end
   -- load_uncached_silently returns (surface, err); on a missing/corrupt file err is set and
   -- the surface is a 0x0 placeholder (load_uncached would swallow the error and hand us that
   -- placeholder, silently yielding blank frames), so key off err to degrade gracefully.
