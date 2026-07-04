@@ -36,6 +36,12 @@ Set `cfg.style` at the top of `linux/awesomewm/claude_status/init.lua`:
 - **`web`** — the Claude "morph" spark.
 - **`code`** — the terminal glyph spinner `✻ ✽ ✶ ✳ ✢`.
 
+### Icon color
+
+Set `cfg.icon_color` (or use the right-click menu): **`brand`** (default) tints the icon
+Anthropic orange — or your hand-edited `cfg.brand` hex — while **`theme`** follows the wibar
+foreground (`beautiful.fg_normal`) so the icon matches a light/dark awesomewm theme.
+
 ## Requirements
 
 - awesomewm **4.3+** with `lgi` (cairo bindings, normally bundled) — developed on

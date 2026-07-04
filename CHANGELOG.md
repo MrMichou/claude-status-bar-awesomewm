@@ -5,6 +5,9 @@ All notable changes to Claude Status Bar are documented here. This project follo
 
 ## [Unreleased]
 
+### Added
+- **Icon color option (Orange / Theme).** New `cfg.icon_color` mirrors the macOS app's Orange/System setting: `brand` (default) keeps the Anthropic orange (or a hand-edited `cfg.brand` hex), while `theme` follows the wibar foreground (`beautiful.fg_normal`) so the icon matches a light/dark awesomewm theme. Selectable from the right-click settings menu; applied on restart (the tint is baked into frame surfaces at load). (#60)
+
 ## [0.6.0] - 2026-07-04
 
 ### Added
