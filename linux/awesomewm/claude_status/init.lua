@@ -186,7 +186,9 @@ local function load_frame_dir(subdir, tint_it)
   -- placeholder, silently yielding blank frames), so key off err to degrade gracefully.
   local sheet, err = gears.surface.load_uncached_silently(frames_dir .. subdir .. ".png")
   if err or not sheet then return {} end
-  return slice_strip(sheet, math.floor(m.n), math.floor(m.w), math.floor(m.h), tint_it)
+  local set = slice_strip(sheet, math.floor(m.n), math.floor(m.w), math.floor(m.h), tint_it)
+  sheet:finish() -- release the strip's pixel buffer now instead of waiting for a GC cycle
+  return set
 end
 
 local is_code = (cfg.style == "code")
