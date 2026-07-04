@@ -3,9 +3,9 @@
 
 Each animation set (e.g. frames/clawd/thinking/00.png … NN.png) becomes a single
 strip frames/clawd/thinking.png laid out left-to-right in frame order, plus an
-entry in frames/sprites.json giving the frame count and cell size. The awesomewm
-widget slices the strip back into per-frame surfaces at load time — same pixels,
-far fewer files in the repo.
+entry in frames/sprites.json giving the frame count. The awesomewm widget slices
+the strip back into per-frame surfaces at load time (deriving the cell size from
+the strip itself) — same pixels, far fewer files in the repo.
 
 Sets are discovered automatically: any directory under frames/ that holds NN.png
 frames is packed, so adding a new animation needs no edit here.
@@ -66,7 +66,7 @@ def pack():
             strip.paste(im, (i * w, 0))
         out = os.path.join(FRAMES, key + ".png")
         strip.save(out)
-        manifest[key] = {"n": len(imgs), "w": w, "h": h}
+        manifest[key] = len(imgs)
         packed += 1
         print(f"packed {key}: {len(imgs)} frames {w}x{h} -> {os.path.relpath(out)}")
     if packed == 0:

@@ -1,42 +1,10 @@
 {
-  "clawd/birthday": {
-    "h": 137,
-    "n": 44,
-    "w": 137
-  },
-  "clawd/listening": {
-    "h": 101,
-    "n": 60,
-    "w": 101
-  },
-  "clawd/sleeping": {
-    "h": 144,
-    "n": 72,
-    "w": 144
-  },
-  "clawd/thinking": {
-    "h": 104,
-    "n": 23,
-    "w": 104
-  },
-  "clawd/typing": {
-    "h": 104,
-    "n": 23,
-    "w": 104
-  },
-  "clawd/walk": {
-    "h": 120,
-    "n": 23,
-    "w": 120
-  },
-  "crab": {
-    "h": 36,
-    "n": 20,
-    "w": 51
-  },
-  "web": {
-    "h": 60,
-    "n": 8,
-    "w": 60
-  }
+  "clawd/birthday": 44,
+  "clawd/listening": 60,
+  "clawd/sleeping": 72,
+  "clawd/thinking": 23,
+  "clawd/typing": 23,
+  "clawd/walk": 23,
+  "crab": 20,
+  "web": 8
 }
