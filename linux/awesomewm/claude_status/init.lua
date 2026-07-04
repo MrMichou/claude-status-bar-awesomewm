@@ -195,9 +195,8 @@ local function session_summary()
   return total, working
 end
 
--- Paint `color` through an alpha-mask PNG -> a colored cairo surface (the macOS tint).
-local function tint(path, color)
-  local mask = gears.surface.load_uncached(path)
+-- Paint `color` through an alpha-mask surface -> a colored cairo surface (the macOS tint).
+local function tint_surface(mask, color)
   if not mask then return nil end
   local w, h = mask:get_width(), mask:get_height()
   local out = cairo.ImageSurface.create(cairo.Format.ARGB32, w, h)
@@ -205,6 +204,11 @@ local function tint(path, color)
   cr:set_source(gears.color(color))
   cr:mask_surface(mask, 0, 0)
   return out
+end
+
+-- Same, from a PNG path (used for the static resting logo).
+local function tint(path, color)
+  return tint_surface(gears.surface.load_uncached(path), color)
 end
 
 local function make_dot(color, size)
@@ -217,18 +221,48 @@ local function make_dot(color, size)
   return out
 end
 
--- Load + (optionally) tint a numbered frame set from `frames_dir/subdir/NN.png`.
-local function load_frame_dir(subdir, tint_it)
+-- Sprite manifest: each animation set ships as one horizontal strip (tools/pack-frames.py)
+-- so the repo holds a handful of PNGs instead of ~300 loose frames. Each set maps to its
+-- frame count `n`; the cell size is derived from the strip itself in load_frame_dir below.
+local sprites = (function()
+  local f = io.open(frames_dir .. "sprites.json", "r")
+  if not f then return {} end
+  local raw = f:read("*a"); f:close()
+  local t = json.decode(raw)
+  return type(t) == "table" and t or {}
+end)()
+
+-- Slice a horizontal sprite-strip into per-frame surfaces. Each cell is copied out at the
+-- origin; with tint_it the copied cell is recoloured through its own alpha via tint_surface
+-- (the macOS spark), reusing the one tint implementation instead of open-coding the mask.
+local function slice_strip(sheet, n, w, h, tint_it)
   local set = {}
-  local i = 0
-  while true do
-    local p = string.format("%s%s/%02d.png", frames_dir, subdir, i)
-    local f = io.open(p, "r")
-    if not f then break end
-    f:close()
-    set[#set + 1] = tint_it and tint(p, cfg.brand) or gears.surface.load_uncached(p)
-    i = i + 1
+  for i = 0, n - 1 do
+    local cell = cairo.ImageSurface.create(cairo.Format.ARGB32, w, h)
+    local cr = cairo.Context(cell)
+    cr:set_source_surface(sheet, -i * w, 0) -- align the i-th cell to the origin
+    cr:paint()
+    set[#set + 1] = tint_it and tint_surface(cell, cfg.brand) or cell
   end
+  return set
+end
+
+-- Load an animation set (`subdir` is its sprites.json key, e.g. "crab" or "clawd/thinking")
+-- as a list of per-frame surfaces, slicing it out of the set's strip. `tint_it` recolours
+-- each frame (the web spark). Returns {} for an unknown set, a malformed manifest entry, or
+-- a missing/corrupt strip PNG, so callers fall back to the resting icon.
+local function load_frame_dir(subdir, tint_it)
+  local n = sprites[subdir]
+  if type(n) ~= "number" or n < 1 then return {} end -- unknown set / malformed manifest
+  n = math.floor(n)
+  -- load_uncached_silently returns (surface, err); on a missing/corrupt file err is set and
+  -- the surface is a 0x0 placeholder (load_uncached would swallow the error and hand us that
+  -- placeholder, silently yielding blank frames), so key off err to degrade gracefully.
+  local sheet, err = gears.surface.load_uncached_silently(frames_dir .. subdir .. ".png")
+  if err or not sheet then return {} end
+  -- Cell size is derived from the strip: h is the sheet height, w is one of n equal columns.
+  local set = slice_strip(sheet, n, math.floor(sheet:get_width() / n), sheet:get_height(), tint_it)
+  sheet:finish() -- release the strip's pixel buffer now instead of waiting for a GC cycle
   return set
 end
 

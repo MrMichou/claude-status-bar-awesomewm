@@ -223,9 +223,10 @@ out of an incident fire a `naughty` notification when `notify_service` is on.
   and writing state: `cat ~/.claude/statusbar/state.json` during a Claude turn.
   Enable hook logging with `CLAUDE_STATUSBAR_DEBUG=1` and check
   `~/.claude/statusbar/hooks.log`.
-- **A black square instead of the orange spark:** the frame PNGs are missing —
-  check `linux/awesomewm/claude_status/frames/web/00.png` exists where you copied
-  the widget folder.
+- **A blank / invisible widget instead of the orange spark:** the frame sprites are missing —
+  check `linux/awesomewm/claude_status/frames/web.png` and `frames/sprites.json`
+  exist where you copied the widget folder. (Frames ship as one sprite-strip per
+  set; `tools/pack-frames.py` regenerates them from per-frame PNGs.)
 - **`require` error on reload:** check the module path matches where you copied the
   folder, and that `lgi` is available (`echo 'return require("lgi") ~= nil' | awesome-client`).
 - **"Claude down" never shows / always shows:** the service check needs `curl` and outbound
