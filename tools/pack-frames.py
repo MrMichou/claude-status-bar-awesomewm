@@ -34,7 +34,9 @@ SETS = [
 
 
 def frame_files(d):
-    return sorted(f for f in os.listdir(d) if f.endswith(".png") and f[:-4].isdigit())
+    # Numeric sort so 100.png follows 99.png (lexicographic would put it after 10.png).
+    return sorted((f for f in os.listdir(d) if f.endswith(".png") and f[:-4].isdigit()),
+                  key=lambda f: int(f[:-4]))
 
 
 def load_manifest(path):
