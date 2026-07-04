@@ -1,7 +1,7 @@
 {
   "name": "claude-status-bar-awesomewm",
   "description": "awesomewm/Linux status indicator for Claude Code: a wibar widget with an animated icon, elapsed timer, awaiting-permission dot, and an active-sessions menu. Linux port of Claude Status Bar — original idea, design, and artwork by @mickces (https://github.com/m1ckc3s/claude-status-bar).",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "author": { "name": "Michael Nicolet", "url": "https://github.com/MrMichou" },
   "homepage": "https://github.com/MrMichou/claude-status-bar-awesomewm",
   "license": "MIT"

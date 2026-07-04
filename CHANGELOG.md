@@ -5,6 +5,17 @@ All notable changes to Claude Status Bar are documented here. This project follo
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-04
+
+### Added
+- **Animation frames ship as sprite-strips.** The ~280 per-frame PNGs are packed into one horizontal strip per animation set (`frames/<set>.png`) plus a `frames/sprites.json` manifest, sliced back into cairo surfaces at load time — the repo drops from ~280 loose PNGs to 9 strips + a manifest, with pixel-identical rendering and unchanged runtime (frames are still pre-decoded once; animation is a pointer swap). New `tools/pack-frames.py` regenerates the strips, auto-discovering the sets under `frames/`. (#13)
+
+### Fixed
+- **Graceful degradation for missing/broken frame assets.** A missing or corrupt sprite-strip, or a malformed `sprites.json` entry, now falls back to the resting icon instead of rendering an invisible/blank widget or crashing Awesome's config at load. (#44, #45)
+
+### Changed
+- **`tools/pack-frames.py` is non-destructive and self-maintaining:** it refuses to overwrite `sprites.json` with an empty manifest when no source frames are present, merges into the existing manifest, discovers animation sets by walking `frames/`, and sorts frames numerically. The manifest stores only the frame count — the cell size is derived from the strip — and the widget's slice/tint path was unified onto a single `tint_surface` implementation with the strip surface freed after slicing. (#43, #46, #47, #48, #49, #50)
+
 ## [0.5.0] - 2026-06-30
 
 ### Added
