@@ -19,6 +19,41 @@ describe("update.js — event → state mapping", () => {
     expect(s.startedAt).toBeGreaterThan(0);
   });
 
+  it("registers an unknown session but never overwrites an existing marker's PID", async () => {
+    const marker = path.join(h.statusbar, "sessions.d", "s1");
+    await run("prompt", { session_id: "s1" });
+    // Late registration: a PID if the test runner itself has a claude ancestor (tests
+    // launched from a Claude session), empty otherwise — digits-only either way.
+    expect(fs.readFileSync(marker, "utf8")).toMatch(/^\d*$/);
+    fs.writeFileSync(marker, "12345"); // as written by lifecycle.js at SessionStart
+    await run("pre", { session_id: "s1", tool_name: "Bash" });
+    expect(fs.readFileSync(marker, "utf8")).toBe("12345"); // reaper PID preserved
+  });
+
+  // Late registration records the claude ancestor PID (like lifecycle.js does), so the
+  // marker stays reapable. Simulated with a wrapper node process titled "claude".
+  it("late registration records the claude ancestor pid (Linux)", async () => {
+    if (process.platform !== "linux") return;
+    const { spawn } = await import("node:child_process");
+    const { HOOKS_DIR } = await import("./helpers.js");
+    const hookPath = path.join(HOOKS_DIR, "update.js");
+    const wrapperSrc = `
+      process.title = "claude";
+      const cp = require("child_process");
+      const c = cp.spawn(process.execPath, [${JSON.stringify(hookPath)}, "prompt"],
+        { env: process.env, stdio: ["pipe", "ignore", "ignore"] });
+      c.stdin.end(JSON.stringify({ session_id: "latepid" }));
+      c.on("close", (code) => process.exit(code ?? 1));
+    `;
+    const wrapper = spawn(process.execPath, ["-e", wrapperSrc], {
+      env: { ...process.env, HOME: h.home },
+      stdio: "ignore",
+    });
+    await new Promise((r) => wrapper.on("close", r));
+    const marker = path.join(h.statusbar, "sessions.d", "latepid");
+    expect(fs.readFileSync(marker, "utf8")).toBe(String(wrapper.pid));
+  });
+
   it("pre with known tool → friendly verb", async () => {
     await run("pre", { session_id: "s1", tool_name: "Bash" });
     expect(readState(h.statusbar).label).toBe("Running command");

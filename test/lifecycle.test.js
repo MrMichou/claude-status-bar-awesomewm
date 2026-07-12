@@ -68,32 +68,44 @@ describe("lifecycle.js — session tracking", () => {
     expect(exists(sessFile("new"))).toBe(true);
   });
 
-  // Reaper (non-darwin): a marker recording a dead claude PID is removed at start,
-  // together with its per-session state; live-PID and legacy empty markers survive.
-  it("on start, reaps markers whose recorded pid is dead, keeps live and pid-less ones", async () => {
-    if (process.platform === "darwin") return;
+  // Reaper (non-darwin): a marker whose recorded PID is dead — or alive but no longer a
+  // `claude` process (PID recycled, typical after reboot) — is removed at start, together
+  // with its per-session state. Markers with a live claude PID or no PID at all survive.
+  it("on start, reaps markers whose recorded pid is dead or recycled, keeps claude and pid-less ones", async () => {
+    if (process.platform !== "linux") return; // reaper reads /proc
     fs.mkdirSync(path.join(h.statusbar, "sessions.d"), { recursive: true });
     fs.mkdirSync(path.join(h.statusbar, "sessions-state"), { recursive: true });
     fs.mkdirSync(path.join(h.statusbar, "sessions-win"), { recursive: true });
 
     // A pid that existed but is guaranteed dead: spawn a no-op child and wait for it.
-    const child = spawn(process.execPath, ["-e", ""], { stdio: "ignore" });
-    const deadPid = child.pid;
-    await new Promise((r) => child.on("close", r));
+    const deadChild = spawn(process.execPath, ["-e", ""], { stdio: "ignore" });
+    const deadPid = deadChild.pid;
+    await new Promise((r) => deadChild.on("close", r));
+
+    // A live process whose comm is "claude" (node's title setter uses prctl(PR_SET_NAME)).
+    const claude = spawn(process.execPath, ["-e", 'process.title = "claude"; setInterval(() => {}, 1000)'], { stdio: "ignore" });
+    for (let i = 0; i < 100; i++) {
+      try { if (fs.readFileSync(`/proc/${claude.pid}/comm`, "utf8").trim() === "claude") break; } catch {}
+      await new Promise((r) => setTimeout(r, 20));
+    }
 
     fs.writeFileSync(sessFile("dead"), String(deadPid));
     fs.writeFileSync(stateFile("dead"), "{}");
     fs.writeFileSync(winFile("dead"), "12345");
-    fs.writeFileSync(sessFile("alive"), String(process.pid));
+    fs.writeFileSync(sessFile("recycled"), String(process.pid)); // alive, but comm is node — not claude
+    fs.writeFileSync(sessFile("alive"), String(claude.pid));
     fs.writeFileSync(sessFile("legacy"), "");
 
-    await run("start", { session_id: "new" });
+    try {
+      await run("start", { session_id: "new" });
 
-    expect(exists(sessFile("dead"))).toBe(false);
-    expect(exists(stateFile("dead"))).toBe(false);
-    expect(exists(winFile("dead"))).toBe(false);
-    expect(exists(sessFile("alive"))).toBe(true);
-    expect(exists(sessFile("legacy"))).toBe(true);
+      expect(exists(sessFile("dead"))).toBe(false);
+      expect(exists(stateFile("dead"))).toBe(false);
+      expect(exists(winFile("dead"))).toBe(false);
+      expect(exists(sessFile("recycled"))).toBe(false);
+      expect(exists(sessFile("alive"))).toBe(true);
+      expect(exists(sessFile("legacy"))).toBe(true);
+    } finally { claude.kill(); }
   });
 
   // The marker records the PID of the nearest ancestor whose comm is "claude", found

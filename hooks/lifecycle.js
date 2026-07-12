@@ -20,25 +20,7 @@ fs.mkdirSync(sessDir, { recursive: true });
 
 const running = () => { try { cp.execSync(`pgrep -x ${EXEC}`, { stdio: "ignore" }); return true; } catch { return false; } };
 const safeId = (s) => String(s || "").replace(/[^A-Za-z0-9_.-]/g, "").slice(0, 64) || "unknown";
-
-// Linux: resolve this session's `claude` PID by walking the hook's ancestry in /proc
-// (node → shell → claude). Stored in the marker so a later SessionStart can reap
-// markers whose process died without SessionEnd (killed terminal, crash, reboot).
-// Returns 0 when unresolvable (non-Linux, unexpected comm) — the marker then stays
-// empty and is never reaped, which is exactly the pre-reaper behavior.
-function claudePid() {
-  let pid = process.ppid;
-  for (let i = 0; i < 20 && pid > 1; i++) {
-    try {
-      if (fs.readFileSync(`/proc/${pid}/comm`, "utf8").trim() === "claude") return pid;
-      const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
-      pid = parseInt(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[1], 10);
-    } catch { return 0; }
-  }
-  return 0;
-}
-
-const alive = (pid) => { try { return process.kill(pid, 0), true; } catch (e) { return e.code === "EPERM"; } };
+const { claudePid, aliveClaude } = require("./pid");
 
 // Linux/X11: remember which window hosts this session so the widget menu can jump to it.
 // At SessionStart the terminal where `claude` was launched is the focused window, so the
@@ -86,7 +68,7 @@ function run() {
       try {
         for (const f of fs.readdirSync(sessDir)) {
           const pid = parseInt(fs.readFileSync(path.join(sessDir, f), "utf8"), 10);
-          if (pid > 0 && !alive(pid)) fs.rmSync(path.join(sessDir, f), { force: true });
+          if (pid > 0 && !aliveClaude(pid)) fs.rmSync(path.join(sessDir, f), { force: true });
         }
       } catch {}
       // Crash-safety: drop per-session state files that no longer have a live marker.

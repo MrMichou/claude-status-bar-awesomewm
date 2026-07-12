@@ -105,12 +105,18 @@ process.stdin.on("end", () => {
 
   // Register the session here too, so a session that predates the hook install (never
   // fired SessionStart) still gets tracked once it does anything. See CLAUDE.md gotcha.
+  // Record the claude PID like lifecycle.js does, so even a late-registered marker is
+  // reapable once its process dies. "wx" never overwrites an existing marker's PID, and
+  // the /proc walk only runs on the rare marker-absent path (existsSync gates it).
   const sid = String(p.session_id || "").replace(/[^A-Za-z0-9_.-]/g, "").slice(0, 64);
   if (sid) {
     try {
       const sessDir = path.join(dir, "sessions.d");
       fs.mkdirSync(sessDir, { recursive: true });
-      fs.writeFileSync(path.join(sessDir, sid), "");
+      const marker = path.join(sessDir, sid);
+      if (!fs.existsSync(marker)) {
+        fs.writeFileSync(marker, String(require("./pid").claudePid() || ""), { flag: "wx" });
+      }
     } catch {}
   }
 
