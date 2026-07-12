@@ -20,7 +20,7 @@ const QUOTA_EVERY = 60; // seconds
 function maybeRefreshQuota() {
   try {
     const w = JSON.parse(fs.readFileSync(path.join(dir, "widget.json"), "utf8"));
-    if (w.show_quota !== true) return;
+    if (w.show_quota !== true && w.notify_quota !== true) return;
   } catch { return; }
   try {
     const age = Date.now() - fs.statSync(path.join(dir, "quota.json")).mtimeMs;

@@ -78,6 +78,16 @@ describe("update.js — event → state mapping", () => {
     expect(JSON.parse(fs.readFileSync(quota, "utf8")).error).toBe("no_token");
   });
 
+  it("notify_quota alone also opts into the quota fetch (#69)", async () => {
+    const quota = path.join(h.statusbar, "quota.json");
+    fs.mkdirSync(h.statusbar, { recursive: true });
+    fs.writeFileSync(path.join(h.statusbar, "widget.json"), JSON.stringify({ notify_quota: true }));
+    await run("prompt", { session_id: "s1" });
+    const end = Date.now() + 3000;
+    while (Date.now() < end && !fs.existsSync(quota)) await new Promise((r) => setTimeout(r, 50));
+    expect(fs.existsSync(quota)).toBe(true);
+  });
+
   it("pre with known tool → friendly verb", async () => {
     await run("pre", { session_id: "s1", tool_name: "Bash" });
     expect(readState(h.statusbar).label).toBe("Running command");
