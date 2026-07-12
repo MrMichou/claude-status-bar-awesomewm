@@ -68,6 +68,9 @@ local cfg = {
   -- The bar shows a compact five-hour badge; the left-click popup has the full detail.
   show_quota         = false,
   quota_warn_percent = 80,       -- ⚠ prefix on the badge / red popup row at or above this
+  -- One-shot notification when a rate-limit window crosses quota_warn_percent (#69).
+  -- Fires once per window and re-arms when the window resets. Off by default.
+  notify_quota       = false,
 }
 local FPS = { web = 9, crab = 12.5, clawd = 14 }
 -- "clawd" style: a pixel crab with a *different* loop per state (the emote set from
@@ -112,14 +115,14 @@ local SETTINGS_SCHEMA = {
   notify_long_turn = "boolean", long_turn_seconds = "number",
   poll_seconds = "number", check_service = "boolean",
   service_poll_seconds = "number",
-  show_quota = "boolean", quota_warn_percent = "number",
+  show_quota = "boolean", quota_warn_percent = "number", notify_quota = "boolean",
 }
 -- Keys the right-click settings menu manages: save_settings() writes these from cfg
 -- and round-trips every other key the user hand-edited into widget.json.
 local MENU_KEYS = {
   "style", "show_timer", "show_aggregate", "show_tokens", "notify_permission", "notify_done",
   "notify_permission_actions", "notify_service", "notify_long_turn", "play_sounds",
-  "show_quota",
+  "show_quota", "notify_quota",
 }
 local settings_path = os.getenv("HOME") .. "/.claude/statusbar/widget.json"
 local raw_settings = {} -- the decoded widget.json, kept verbatim for save round-tripping
@@ -736,6 +739,28 @@ local function notify_long_turn()
   }
 end
 
+-- Quota-threshold alert (#69): fired by the poll loop when a rate-limit window crosses
+-- cfg.quota_warn_percent. Deduped per window on the window's reset time, so it fires
+-- once per window and re-arms automatically when the window resets.
+local quota_notified = {} -- window name -> resetsAt already notified for
+local function check_quota_alerts()
+  if not cfg.notify_quota or not quota then return end
+  for name, w in pairs({ session = quota.fiveHour, week = quota.sevenDay }) do
+    if w and type(w.pct) == "number" and w.pct >= cfg.quota_warn_percent
+      and quota_notified[name] ~= w.resetsAt then
+      quota_notified[name] = w.resetsAt
+      naughty.notification {
+        title = "Claude Code",
+        message = string.format("Claude usage: %s window at %d%% — resets %s",
+          name, math.floor(w.pct + 0.5),
+          os.date(name == "session" and "%H:%M" or "%a %H:%M", tonumber(w.resetsAt) or 0)),
+        urgency = "normal",
+        icon = resting,
+      }
+    end
+  end
+end
+
 local function read_state()
   local f = io.open(state_path, "r")
   if not f then return nil end
@@ -856,11 +881,12 @@ local poll_timer = gears.timer {
         no_session = (open_session_count() == 0)
       end
       -- Quota gauge: piggyback on the throttled cadence; re-decode only on a fresh write.
-      if cfg.show_quota then
+      if cfg.show_quota or cfg.notify_quota then
         local qmt = file_mtime(quota_path)
         if qmt == nil or qmt ~= quota_mtime then
           quota_mtime = qmt
           quota = read_quota()
+          check_quota_alerts()
         end
       end
     else
@@ -1185,6 +1211,8 @@ local function build_settings_menu()
         function() cfg.notify_done = not cfg.notify_done; save_settings() end },
       { check(cfg.notify_long_turn) .. "Notify on long turn",
         function() cfg.notify_long_turn = not cfg.notify_long_turn; save_settings() end },
+      { check(cfg.notify_quota) .. "Notify on quota threshold",
+        function() cfg.notify_quota = not cfg.notify_quota; save_settings() end },
       { check(cfg.play_sounds) .. "Play sounds",
         function() cfg.play_sounds = not cfg.play_sounds; save_settings() end },
       { check(cfg.notify_service) .. "Notify on Claude outage",
