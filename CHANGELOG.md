@@ -5,6 +5,9 @@ All notable changes to Claude Status Bar are documented here. This project follo
 
 ## [Unreleased]
 
+### Fixed
+- **Linux: stale session markers are reaped, so the session count no longer drifts upward.** Sessions that died without `SessionEnd` (killed terminal, crash, reboot) leaked their `sessions.d/` marker forever, inflating the widget's session count. `SessionStart` now records the session's `claude` PID in the marker (found by walking the hook's `/proc` ancestry) and reaps any marker whose recorded PID is dead or recycled (`/proc/<pid>/comm` must still be `claude`). Markers without a PID are kept — worst case is the old behavior. Also fixes `update.js` blanking the marker on every event, which would have erased the PID. (#63)
+
 ## [0.6.0] - 2026-07-04
 
 ### Added
