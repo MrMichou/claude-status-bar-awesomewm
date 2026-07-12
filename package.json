@@ -1,6 +1,6 @@
 {
   "name": "claude-status-bar-awesomewm",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "private": true,
   "description": "Tests for the Node hooks that drive the awesomewm Claude status widget.",
   "scripts": {

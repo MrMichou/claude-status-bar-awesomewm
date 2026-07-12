@@ -5,10 +5,15 @@ All notable changes to Claude Status Bar are documented here. This project follo
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-12
+
 ### Added
-- **Stale-data indicator.** The widget now says so when its data may be a frozen lie instead of displaying it confidently: a live state (`thinking`/`tool`) whose `state.json` stopped updating for `stale_after_seconds` (default 300, `widget.json`-tunable) gets a `?` suffix on the bar and `(stale)` on its popup row — covering the honest-doubt window before the existing 900s idle cutoff; quota data older than 10 minutes or carrying a fetch error renders dimmed grey in the bar and `(stale)` in the popup. (#71)
-- **Quota-threshold notification.** Optional desktop notification when a rate-limit window (session or weekly) crosses `quota_warn_percent`: "Claude usage: session window at 84% — resets 14:32". Fires once per window, deduped on the window's reset time, and re-arms automatically at reset. Off by default (`notify_quota`); toggle in the settings menu. Enabling it (even without the bar gauge) opts into the quota polling. (#69)
 - **Usage-quota gauge** (inspired by [CodexBar](https://github.com/steipete/CodexBar)). The bar can show Claude's rate-limit utilization with a reset countdown (`⌛34% · 1h12`, `⚠` past a warn threshold), with per-window detail (session / week / Opus) in the left-click popup. A new `hooks/usage.js` polls Anthropic's OAuth usage endpoint with the local Claude Code token (sent only to the hardcoded `api.anthropic.com`, never logged) and atomically writes `quota.json`; `update.js` keeps it fresh while sessions are active, so nothing polls at idle — the countdown stays valid from absolute reset times. Off by default (`show_quota`); toggle in the settings menu; `quota_warn_percent` (default 80) tunable via `widget.json`. (#68)
+- **Quota-threshold notification.** Optional desktop notification when a rate-limit window (session or weekly) crosses `quota_warn_percent`: "Claude usage: session window at 84% — resets 14:32". Fires once per window, deduped on the window's reset time, and re-arms automatically at reset. Off by default (`notify_quota`); toggle in the settings menu. Enabling it (even without the bar gauge) opts into the quota polling. (#69)
+- **Stale-data indicator.** The widget now says so when its data may be a frozen lie instead of displaying it confidently: a live state (`thinking`/`tool`) whose `state.json` stopped updating for `stale_after_seconds` (default 300, `widget.json`-tunable) gets a `?` suffix on the bar and `(stale)` on its popup row — covering the honest-doubt window before the existing 900s idle cutoff; quota data older than 10 minutes or carrying a fetch error renders dimmed grey in the bar and `(stale)` in the popup. (#71)
+
+### Fixed
+- **Session status dots align with the session title.** The per-session dot in the left-click popup was vertically centered, so on multi-line rows it floated against the middle line; it now sits on the title line it belongs to.
 
 ## [0.6.1] - 2026-07-12
 
