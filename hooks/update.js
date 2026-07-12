@@ -6,10 +6,30 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const cp = require("child_process");
 
 const dir = path.join(os.homedir(), ".claude", "statusbar");
 const statePath = path.join(dir, "state.json");
 const event = process.argv[2] || "";
+
+// Quota-gauge trigger (issue #68): while the user works, keep quota.json fresh by
+// spawning usage.js detached — but only when the widget opted in (show_quota in
+// widget.json) and the file is missing or older than QUOTA_EVERY. usage.js has its
+// own tighter throttle, so concurrent triggers collapse into a single fetch.
+const QUOTA_EVERY = 60; // seconds
+function maybeRefreshQuota() {
+  try {
+    const w = JSON.parse(fs.readFileSync(path.join(dir, "widget.json"), "utf8"));
+    if (w.show_quota !== true) return;
+  } catch { return; }
+  try {
+    const age = Date.now() - fs.statSync(path.join(dir, "quota.json")).mtimeMs;
+    if (age < QUOTA_EVERY * 1000) return;
+  } catch {} // absent quota.json → fetch
+  try {
+    cp.spawn(process.execPath, [path.join(__dirname, "usage.js")], { detached: true, stdio: "ignore" }).unref();
+  } catch {}
+}
 
 const TOOL_LABELS = {
   Bash: "Running command", Edit: "Editing", Write: "Writing", MultiEdit: "Editing",
@@ -177,6 +197,8 @@ process.stdin.on("end", () => {
     const u = turnUsage(transcript);
     if (u) { tokens = u.tokens; cost = u.cost; }
   }
+  maybeRefreshQuota();
+
   const out = { state, label, tool: p.tool_name || "", project, sessionId: p.session_id || "", transcript, startedAt, ts, tokens: tokens || 0, cost: cost || 0 };
   try {
     fs.mkdirSync(dir, { recursive: true });

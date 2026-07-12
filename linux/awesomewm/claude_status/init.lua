@@ -63,6 +63,11 @@ local cfg = {
   service_url    = "https://status.claude.com/api/v2/status.json",
   service_poll_seconds = 60,     -- network is slow; poll far less often than the local state
   notify_service = true,
+  -- Usage-quota gauge (#68): rate-limit utilization + reset countdown, read from
+  -- ~/.claude/statusbar/quota.json (written by hooks/usage.js while sessions are active).
+  -- The bar shows a compact five-hour badge; the left-click popup has the full detail.
+  show_quota         = false,
+  quota_warn_percent = 80,       -- ⚠ prefix on the badge / red popup row at or above this
 }
 local FPS = { web = 9, crab = 12.5, clawd = 14 }
 -- "clawd" style: a pixel crab with a *different* loop per state (the emote set from
@@ -107,12 +112,14 @@ local SETTINGS_SCHEMA = {
   notify_long_turn = "boolean", long_turn_seconds = "number",
   poll_seconds = "number", check_service = "boolean",
   service_poll_seconds = "number",
+  show_quota = "boolean", quota_warn_percent = "number",
 }
 -- Keys the right-click settings menu manages: save_settings() writes these from cfg
 -- and round-trips every other key the user hand-edited into widget.json.
 local MENU_KEYS = {
   "style", "show_timer", "show_aggregate", "show_tokens", "notify_permission", "notify_done",
   "notify_permission_actions", "notify_service", "notify_long_turn", "play_sounds",
+  "show_quota",
 }
 local settings_path = os.getenv("HOME") .. "/.claude/statusbar/widget.json"
 local raw_settings = {} -- the decoded widget.json, kept verbatim for save round-tripping
@@ -142,6 +149,7 @@ end
 load_settings()
 
 local state_path = os.getenv("HOME") .. "/.claude/statusbar/state.json"
+local quota_path = os.getenv("HOME") .. "/.claude/statusbar/quota.json"
 local module_dir = (debug.getinfo(1, "S").source:match("^@(.*/)")) or "./"
 local frames_dir = module_dir .. "frames/"
 
@@ -457,12 +465,35 @@ local function tok_badge()
   local seg = fmt_tok_cost(cur.tokens, cur.cost)
   return seg == "" and "" or ("  " .. seg)
 end
+-- Usage-quota gauge (#68). `quota` is the decoded quota.json (or nil), refreshed on the
+-- throttled session-scan cadence in the poll below. hooks/usage.js keeps the file fresh
+-- while sessions are active; when idle the countdown stays valid (absolute reset times).
+local quota = nil
+local function fmt_reset_in(resets_at)
+  local secs = (tonumber(resets_at) or 0) - os.time()
+  if secs <= 0 then return "now" end
+  local h, m = math.floor(secs / 3600), math.floor(secs % 3600 / 60)
+  if h > 24 then return string.format("%dd", math.floor(h / 24)) end
+  if h > 0 then return string.format("%dh%02d", h, m) end
+  return string.format("%dm", math.max(1, m))
+end
+-- Compact five-hour readout for the bar, e.g. "  ⌛34% · 1h12" ("⚠" past the warn
+-- threshold on either window). Weekly detail lives in the popup, not here.
+local function quota_badge()
+  if not cfg.show_quota or not quota then return "" end
+  local fh = quota.fiveHour
+  if not fh or type(fh.pct) ~= "number" then return "" end
+  local warn = fh.pct >= cfg.quota_warn_percent
+    or (quota.sevenDay and (tonumber(quota.sevenDay.pct) or 0) >= cfg.quota_warn_percent)
+  return string.format("  %s%d%% · %s", warn and "⚠" or "⌛", math.floor(fh.pct + 0.5),
+    fmt_reset_in(fh.resetsAt))
+end
 local function set_label(base, startedAt)
   local text = base or ""
   if cfg.show_timer and startedAt and startedAt > 0 then
     text = text .. "  " .. fmt_elapsed(startedAt)
   end
-  text = text .. agg_badge() .. tok_badge()
+  text = text .. agg_badge() .. tok_badge() .. quota_badge()
   text = text:gsub("^%s+", "") -- a badge with an empty base would otherwise lead with spaces
   if text == last_label_text then return end
   last_label_text = text
@@ -713,6 +744,15 @@ local function read_state()
   return json.decode(raw)
 end
 
+local function read_quota()
+  local f = io.open(quota_path, "r")
+  if not f then return nil end
+  local raw = f:read("*a"); f:close()
+  if not raw or raw == "" then return nil end
+  local t = json.decode(raw)
+  return type(t) == "table" and t or nil
+end
+
 -- state.json's modification time in microseconds, so the poll can skip re-reading +
 -- decoding it while it hasn't changed (the idle case). nil = absent or stat failed; the
 -- caller then falls back to an unconditional read, so a broken stat never hides the file.
@@ -770,6 +810,7 @@ local session_ticks = 0  -- countdown to the next sessions.d re-enumeration
 local no_session = false -- cached "no session open" (drives the idle/sleeping crab)
 local SESSION_EVERY = 5  -- re-enumerate sessions.d at most every N polls (~2s) at idle
 local long_turn_notified = 0 -- startedAt we already nudged for (dedupe the long-turn notification)
+local quota_mtime = nil  -- last seen quota.json mtime (µs), same gating as state.json
 -- Kept in a local so we can fire the first poll *explicitly* at the end of the module — see
 -- the emit_signal call below. (call_now would run it here, before read_window_id/focus_window
 -- are defined further down, which crashes when a session is already awaiting permission.)
@@ -814,6 +855,14 @@ local poll_timer = gears.timer {
       else
         no_session = (open_session_count() == 0)
       end
+      -- Quota gauge: piggyback on the throttled cadence; re-decode only on a fresh write.
+      if cfg.show_quota then
+        local qmt = file_mtime(quota_path)
+        if qmt == nil or qmt ~= quota_mtime then
+          quota_mtime = qmt
+          quota = read_quota()
+        end
+      end
     else
       session_ticks = session_ticks - 1
     end
@@ -845,6 +894,8 @@ local poll_timer = gears.timer {
     local sig = cur.state .. "|" .. (cur.label or "") .. "|" .. tostring(cur.startedAt)
     if cfg.show_aggregate then sig = sig .. "|" .. agg_total .. "|" .. agg_working end
     if cfg.show_tokens then sig = sig .. "|" .. tostring(cur.tokens) .. "|" .. tostring(cur.cost) end
+    -- The rendered badge string covers both the pct and the (minute-granular) countdown.
+    if cfg.show_quota then sig = sig .. "|" .. quota_badge() end
     if live or sig ~= applied_sig then
       applied_sig = sig
       apply()
@@ -1031,6 +1082,28 @@ local function build_menu_widget()
       widget = wibox.widget.textbox,
     }
   end
+  -- Account-wide usage quota (#68): full detail here, the bar badge stays compact.
+  -- Windows past the warn threshold render in the incident color.
+  if cfg.show_quota and quota then
+    local segs = {}
+    local function seg(name, w, datefmt)
+      if not w or type(w.pct) ~= "number" then return end
+      local color = (w.pct >= cfg.quota_warn_percent) and cfg.down or "#888888"
+      segs[#segs + 1] = string.format("<span foreground='%s'>%s %d%% — resets %s</span>",
+        color, name, math.floor(w.pct + 0.5),
+        os.date(datefmt, tonumber(w.resetsAt) or 0))
+    end
+    seg("Session", quota.fiveHour, "%H:%M")
+    seg("Week", quota.sevenDay, "%a %H:%M")
+    seg("Opus", quota.sevenDayOpus, "%a %H:%M")
+    if #segs > 0 then
+      rows[#rows + 1] = wibox.widget {
+        markup = table.concat(segs, "<span foreground='#888888'>   ·   </span>"),
+        font = beautiful.font_name .. "9",
+        widget = wibox.widget.textbox,
+      }
+    end
+  end
   if #ids == 0 then
     rows[#rows + 1] = wibox.widget {
       markup = "<span foreground='#888'><i>No active sessions</i></span>",
@@ -1102,6 +1175,8 @@ local function build_settings_menu()
         function() cfg.show_aggregate = not cfg.show_aggregate; save_settings(); apply() end },
       { check(cfg.show_tokens) .. "Show tokens / cost",
         function() cfg.show_tokens = not cfg.show_tokens; save_settings(); apply() end },
+      { check(cfg.show_quota) .. "Show usage quota",
+        function() cfg.show_quota = not cfg.show_quota; save_settings(); apply() end },
       { check(cfg.notify_permission) .. "Notify on permission",
         function() cfg.notify_permission = not cfg.notify_permission; save_settings() end },
       { check(cfg.notify_permission_actions) .. "Yes/No buttons on permission",

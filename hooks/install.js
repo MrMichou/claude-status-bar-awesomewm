@@ -28,6 +28,8 @@ fs.copyFileSync(path.join(__dirname, "update.js"), updateDest);
 fs.copyFileSync(path.join(__dirname, "lifecycle.js"), lifecycleDest);
 // pid.js is require()d by both scripts above, so it must live next to them.
 fs.copyFileSync(path.join(__dirname, "pid.js"), path.join(sbDir, "pid.js"));
+// usage.js is spawned by update.js from its own directory (quota gauge, #68).
+fs.copyFileSync(path.join(__dirname, "usage.js"), path.join(sbDir, "usage.js"));
 // Bundled completion sound for the widget's optional audible feedback (off by default).
 // Best-effort: a missing asset must never fail the hook install.
 try {

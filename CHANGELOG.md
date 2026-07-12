@@ -5,6 +5,9 @@ All notable changes to Claude Status Bar are documented here. This project follo
 
 ## [Unreleased]
 
+### Added
+- **Usage-quota gauge** (inspired by [CodexBar](https://github.com/steipete/CodexBar)). The bar can show Claude's rate-limit utilization with a reset countdown (`⌛34% · 1h12`, `⚠` past a warn threshold), with per-window detail (session / week / Opus) in the left-click popup. A new `hooks/usage.js` polls Anthropic's OAuth usage endpoint with the local Claude Code token (sent only to the hardcoded `api.anthropic.com`, never logged) and atomically writes `quota.json`; `update.js` keeps it fresh while sessions are active, so nothing polls at idle — the countdown stays valid from absolute reset times. Off by default (`show_quota`); toggle in the settings menu; `quota_warn_percent` (default 80) tunable via `widget.json`. (#68)
+
 ## [0.6.1] - 2026-07-12
 
 ### Fixed

@@ -54,6 +54,30 @@ describe("update.js — event → state mapping", () => {
     expect(fs.readFileSync(marker, "utf8")).toBe(String(wrapper.pid));
   });
 
+  // Quota-gauge trigger (#68): with show_quota enabled and no fresh quota.json, an event
+  // spawns usage.js detached, which (with no credentials in the fake HOME) writes a
+  // no_token quota.json. Without the opt-in, nothing is written.
+  it("spawns the quota fetch when widget.json opts in, not otherwise", async () => {
+    const quota = path.join(h.statusbar, "quota.json");
+    const waitFor = async (pred, ms = 3000) => {
+      const end = Date.now() + ms;
+      while (Date.now() < end) {
+        if (pred()) return true;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      return pred();
+    };
+
+    await run("prompt", { session_id: "s1" }); // no widget.json → no fetch
+    await new Promise((r) => setTimeout(r, 300));
+    expect(fs.existsSync(quota)).toBe(false);
+
+    fs.writeFileSync(path.join(h.statusbar, "widget.json"), JSON.stringify({ show_quota: true }));
+    await run("prompt", { session_id: "s1" });
+    expect(await waitFor(() => fs.existsSync(quota))).toBe(true);
+    expect(JSON.parse(fs.readFileSync(quota, "utf8")).error).toBe("no_token");
+  });
+
   it("pre with known tool → friendly verb", async () => {
     await run("pre", { session_id: "s1", tool_name: "Bash" });
     expect(readState(h.statusbar).label).toBe("Running command");
