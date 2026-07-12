@@ -1111,7 +1111,7 @@ local function session_row(info, winid)
       {
         image = make_dot(state_color(info.state), dpi(12)),
         forced_width = dpi(12), forced_height = dpi(12),
-        valign = "center",
+        valign = "top",
         widget = wibox.widget.imagebox,
       },
       lines,
