@@ -38,7 +38,13 @@ function claudePid() {
   return 0;
 }
 
-const alive = (pid) => { try { return process.kill(pid, 0), true; } catch (e) { return e.code === "EPERM"; } };
+// A recorded PID counts as alive only while it is still a `claude` process: PIDs are
+// recorded by matching comm == "claude" in claudePid(), so a different comm means the
+// PID was recycled (typical after a reboot, where low PIDs are reused quickly).
+const aliveClaude = (pid) => {
+  try { return fs.readFileSync(`/proc/${pid}/comm`, "utf8").trim() === "claude"; }
+  catch { return false; }
+};
 
 // Linux/X11: remember which window hosts this session so the widget menu can jump to it.
 // At SessionStart the terminal where `claude` was launched is the focused window, so the
@@ -86,7 +92,7 @@ function run() {
       try {
         for (const f of fs.readdirSync(sessDir)) {
           const pid = parseInt(fs.readFileSync(path.join(sessDir, f), "utf8"), 10);
-          if (pid > 0 && !alive(pid)) fs.rmSync(path.join(sessDir, f), { force: true });
+          if (pid > 0 && !aliveClaude(pid)) fs.rmSync(path.join(sessDir, f), { force: true });
         }
       } catch {}
       // Crash-safety: drop per-session state files that no longer have a live marker.
