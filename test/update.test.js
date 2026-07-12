@@ -19,6 +19,15 @@ describe("update.js — event → state mapping", () => {
     expect(s.startedAt).toBeGreaterThan(0);
   });
 
+  it("registers an unknown session but never overwrites an existing marker's PID", async () => {
+    const marker = path.join(h.statusbar, "sessions.d", "s1");
+    await run("prompt", { session_id: "s1" });
+    expect(fs.readFileSync(marker, "utf8")).toBe(""); // late registration: empty marker
+    fs.writeFileSync(marker, "12345"); // as written by lifecycle.js at SessionStart
+    await run("pre", { session_id: "s1", tool_name: "Bash" });
+    expect(fs.readFileSync(marker, "utf8")).toBe("12345"); // reaper PID preserved
+  });
+
   it("pre with known tool → friendly verb", async () => {
     await run("pre", { session_id: "s1", tool_name: "Bash" });
     expect(readState(h.statusbar).label).toBe("Running command");

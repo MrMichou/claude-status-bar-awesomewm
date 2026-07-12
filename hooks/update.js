@@ -105,12 +105,14 @@ process.stdin.on("end", () => {
 
   // Register the session here too, so a session that predates the hook install (never
   // fired SessionStart) still gets tracked once it does anything. See CLAUDE.md gotcha.
+  // "wx" never overwrites: lifecycle.js records the claude PID in the marker at
+  // SessionStart (for the stale-marker reaper), and blanking it here would disable it.
   const sid = String(p.session_id || "").replace(/[^A-Za-z0-9_.-]/g, "").slice(0, 64);
   if (sid) {
     try {
       const sessDir = path.join(dir, "sessions.d");
       fs.mkdirSync(sessDir, { recursive: true });
-      fs.writeFileSync(path.join(sessDir, sid), "");
+      fs.writeFileSync(path.join(sessDir, sid), "", { flag: "wx" });
     } catch {}
   }
 
