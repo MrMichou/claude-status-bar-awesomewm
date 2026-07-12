@@ -71,6 +71,10 @@ local cfg = {
   -- One-shot notification when a rate-limit window crosses quota_warn_percent (#69).
   -- Fires once per window and re-arms when the window resets. Off by default.
   notify_quota       = false,
+  -- Stale-data honesty (#71): a live state (thinking/tool) whose state.json hasn't been
+  -- touched for this long gets a "?" suffix ("(stale)" in the popup); quota data older
+  -- than 10 min (or carrying a fetch error) renders dimmed. widget.json-only tunable.
+  stale_after_seconds = 300,
 }
 local FPS = { web = 9, crab = 12.5, clawd = 14 }
 -- "clawd" style: a pixel crab with a *different* loop per state (the emote set from
@@ -116,6 +120,7 @@ local SETTINGS_SCHEMA = {
   poll_seconds = "number", check_service = "boolean",
   service_poll_seconds = "number",
   show_quota = "boolean", quota_warn_percent = "number", notify_quota = "boolean",
+  stale_after_seconds = "number",
 }
 -- Keys the right-click settings menu manages: save_settings() writes these from cfg
 -- and round-trips every other key the user hand-edited into widget.json.
@@ -480,28 +485,60 @@ local function fmt_reset_in(resets_at)
   if h > 0 then return string.format("%dh%02d", h, m) end
   return string.format("%dm", math.max(1, m))
 end
+-- Quota data is stale when the last fetch errored or nothing refreshed it for a while
+-- (usage.js only runs while sessions are active, so idle staleness is expected — the
+-- badge dims instead of lying with a confident number).
+local QUOTA_STALE_SECONDS = 600
+local function quota_stale()
+  if not quota then return false end
+  if quota.error ~= nil then return true end
+  return os.time() - (tonumber(quota.fetchedAt) or 0) > QUOTA_STALE_SECONDS
+end
 -- Compact five-hour readout for the bar, e.g. "  ⌛34% · 1h12" ("⚠" past the warn
 -- threshold on either window). Weekly detail lives in the popup, not here.
+-- Returns the text segment plus a stale flag (set_label dims the segment when stale).
 local function quota_badge()
-  if not cfg.show_quota or not quota then return "" end
+  if not cfg.show_quota or not quota then return "", false end
   local fh = quota.fiveHour
-  if not fh or type(fh.pct) ~= "number" then return "" end
+  if not fh or type(fh.pct) ~= "number" then return "", false end
   local warn = fh.pct >= cfg.quota_warn_percent
     or (quota.sevenDay and (tonumber(quota.sevenDay.pct) or 0) >= cfg.quota_warn_percent)
   return string.format("  %s%d%% · %s", warn and "⚠" or "⌛", math.floor(fh.pct + 0.5),
-    fmt_reset_in(fh.resetsAt))
+    fmt_reset_in(fh.resetsAt)), quota_stale()
+end
+-- "?" after the label when state.json claims a live state but stopped updating: the
+-- data may be a frozen lie (crashed session, missed hook), so say so. effective_state's
+-- 900s cutoff eventually forces idle; this covers the honest-doubt window before it.
+local function stale_suffix()
+  if (cur.state == "thinking" or cur.state == "tool")
+    and (tonumber(cur.ts) or 0) > 0
+    and os.time() - cur.ts > cfg.stale_after_seconds then return "  ?" end
+  return ""
 end
 local function set_label(base, startedAt)
-  local text = base or ""
+  local head = base or ""
   if cfg.show_timer and startedAt and startedAt > 0 then
-    text = text .. "  " .. fmt_elapsed(startedAt)
+    head = head .. "  " .. fmt_elapsed(startedAt)
   end
-  text = text .. agg_badge() .. tok_badge() .. quota_badge()
-  text = text:gsub("^%s+", "") -- a badge with an empty base would otherwise lead with spaces
-  if text == last_label_text then return end
-  last_label_text = text
-  label.markup = ""
-  label:set_text(text)
+  head = head .. stale_suffix() .. agg_badge() .. tok_badge()
+  local qb, q_stale = quota_badge()
+  if head == "" then -- a badge with an empty base would otherwise lead with spaces
+    qb = qb:gsub("^%s+", "")
+  else
+    head = head:gsub("^%s+", "")
+  end
+  -- The stale flag changes rendering (dimmed span) without changing the text, so it
+  -- must be part of the change-detection key.
+  local key = head .. qb .. (q_stale and "\0stale" or "")
+  if key == last_label_text then return end
+  last_label_text = key
+  if qb ~= "" and q_stale then
+    label.markup = gears.string.xml_escape(head) ..
+      "<span foreground='#888888'>" .. gears.string.xml_escape(qb) .. "</span>"
+  else
+    label.markup = ""
+    label:set_text(head .. qb)
+  end
 end
 
 -- Show a non-animated icon for the current style. kind = "permission" | "rest".
@@ -865,6 +902,7 @@ local poll_timer = gears.timer {
         sessionId = st.sessionId or "",
         tokens = (eff == "idle") and 0 or (tonumber(st.tokens) or 0),
         cost = (eff == "idle") and 0 or (tonumber(st.cost) or 0),
+        ts = tonumber(st.ts) or 0, -- last hook write; drives the stale "?" suffix
       }
     end
 
@@ -920,8 +958,13 @@ local poll_timer = gears.timer {
     local sig = cur.state .. "|" .. (cur.label or "") .. "|" .. tostring(cur.startedAt)
     if cfg.show_aggregate then sig = sig .. "|" .. agg_total .. "|" .. agg_working end
     if cfg.show_tokens then sig = sig .. "|" .. tostring(cur.tokens) .. "|" .. tostring(cur.cost) end
-    -- The rendered badge string covers both the pct and the (minute-granular) countdown.
-    if cfg.show_quota then sig = sig .. "|" .. quota_badge() end
+    -- The rendered badge string covers both the pct and the (minute-granular) countdown;
+    -- the stale flags change rendering without changing text, so they join the key too.
+    if cfg.show_quota then
+      local qb, qs = quota_badge()
+      sig = sig .. "|" .. qb .. (qs and "!" or "")
+    end
+    sig = sig .. stale_suffix()
     if live or sig ~= applied_sig then
       applied_sig = sig
       apply()
@@ -1033,6 +1076,12 @@ local function session_row(info, winid)
   local sub = info.label
   if sub == nil or sub == "" then sub = STATE_TEXT[info.state] or info.state or "" end
   if info.startedAt and info.startedAt > 0 then sub = sub .. "  ·  " .. fmt_elapsed(info.startedAt) end
+  -- A live state that stopped updating may be a frozen lie — flag it (#71).
+  if (info.state == "thinking" or info.state == "tool")
+    and (tonumber(info.ts) or 0) > 0
+    and os.time() - info.ts > cfg.stale_after_seconds then
+    sub = sub .. "  (stale)"
+  end
   -- Rows with a known window get a hint glyph and become clickable to jump to it.
   local hint = winid and " <span foreground='#666'>↗</span>" or ""
   local lines = {
@@ -1062,7 +1111,7 @@ local function session_row(info, winid)
       {
         image = make_dot(state_color(info.state), dpi(12)),
         forced_width = dpi(12), forced_height = dpi(12),
-        valign = "center",
+        valign = "top",
         widget = wibox.widget.imagebox,
       },
       lines,
@@ -1122,6 +1171,9 @@ local function build_menu_widget()
     seg("Session", quota.fiveHour, "%H:%M")
     seg("Week", quota.sevenDay, "%a %H:%M")
     seg("Opus", quota.sevenDayOpus, "%a %H:%M")
+    if quota_stale() then
+      segs[#segs + 1] = "<span foreground='#888888'>(stale)</span>"
+    end
     if #segs > 0 then
       rows[#rows + 1] = wibox.widget {
         markup = table.concat(segs, "<span foreground='#888888'>   ·   </span>"),
