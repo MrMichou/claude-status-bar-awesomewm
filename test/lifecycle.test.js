@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { tmpHome, runHook, exists } from "./helpers.js";
+import { tmpHome, runHook, exists, HOOKS_DIR } from "./helpers.js";
 
 // lifecycle.js branches on platform. We force Linux behaviour (the macOS branch shells
 // out to `open`/`launchctl`). The script reads process.platform, not an env var, so the
@@ -65,5 +66,57 @@ describe("lifecycle.js — session tracking", () => {
     expect(exists(stateFile("live"))).toBe(true);
     expect(exists(stateFile("orphan"))).toBe(false);
     expect(exists(sessFile("new"))).toBe(true);
+  });
+
+  // Reaper (non-darwin): a marker recording a dead claude PID is removed at start,
+  // together with its per-session state; live-PID and legacy empty markers survive.
+  it("on start, reaps markers whose recorded pid is dead, keeps live and pid-less ones", async () => {
+    if (process.platform === "darwin") return;
+    fs.mkdirSync(path.join(h.statusbar, "sessions.d"), { recursive: true });
+    fs.mkdirSync(path.join(h.statusbar, "sessions-state"), { recursive: true });
+    fs.mkdirSync(path.join(h.statusbar, "sessions-win"), { recursive: true });
+
+    // A pid that existed but is guaranteed dead: spawn a no-op child and wait for it.
+    const child = spawn(process.execPath, ["-e", ""], { stdio: "ignore" });
+    const deadPid = child.pid;
+    await new Promise((r) => child.on("close", r));
+
+    fs.writeFileSync(sessFile("dead"), String(deadPid));
+    fs.writeFileSync(stateFile("dead"), "{}");
+    fs.writeFileSync(winFile("dead"), "12345");
+    fs.writeFileSync(sessFile("alive"), String(process.pid));
+    fs.writeFileSync(sessFile("legacy"), "");
+
+    await run("start", { session_id: "new" });
+
+    expect(exists(sessFile("dead"))).toBe(false);
+    expect(exists(stateFile("dead"))).toBe(false);
+    expect(exists(winFile("dead"))).toBe(false);
+    expect(exists(sessFile("alive"))).toBe(true);
+    expect(exists(sessFile("legacy"))).toBe(true);
+  });
+
+  // The marker records the PID of the nearest ancestor whose comm is "claude", found
+  // by walking /proc. Simulated with a wrapper node process titled "claude" (node's
+  // title setter uses prctl(PR_SET_NAME) on Linux, which is what /proc/<pid>/comm shows).
+  it("start records the claude ancestor pid in the marker (Linux)", async () => {
+    if (process.platform !== "linux") return;
+    const hookPath = path.join(HOOKS_DIR, "lifecycle.js");
+    const wrapperSrc = `
+      process.title = "claude";
+      const cp = require("child_process");
+      const c = cp.spawn(process.execPath, [${JSON.stringify(hookPath)}, "start"],
+        { env: process.env, stdio: ["pipe", "ignore", "ignore"] });
+      c.stdin.end(JSON.stringify({ session_id: "pidtest" }));
+      c.on("close", (code) => process.exit(code ?? 1));
+    `;
+    const wrapper = spawn(process.execPath, ["-e", wrapperSrc], {
+      env: { ...process.env, HOME: h.home },
+      stdio: "ignore",
+    });
+    await new Promise((r) => wrapper.on("close", r));
+
+    const marker = fs.readFileSync(sessFile("pidtest"), "utf8");
+    expect(marker).toBe(String(wrapper.pid));
   });
 });
