@@ -331,6 +331,47 @@ local code_count = #CODE.glyphs * CODE.sub
 local fps = is_code and (code_count / CODE.cycle) or (FPS[cfg.style] or 9)
 
 --==[ Widgets ]==---------------------------------------------------------------
+-- The animated icon. wibox.widget.imagebox emits widget::layout_changed on every set_image,
+-- which makes Awesome re-lay out (and re-fit every textbox of) the whole bar 9-14 times a
+-- second while the icon animates. Frames of one loop all have the same size, so this widget
+-- only asks for a redraw of its own area, and a relayout only when the image size changes.
+-- It draws like the imagebox it replaces (resize = true): scaled to fit, aspect kept, top-left.
+local function frame_box(image, size)
+  local w = wibox.widget.base.make_widget(nil, "claude_status.frame_box", { enable_properties = true })
+  local function dims(img)
+    if not img then return 0, 0 end
+    return img:get_width(), img:get_height()
+  end
+  function w:fit(_, width, height)
+    local iw, ih = dims(self._private.image)
+    if iw == 0 or ih == 0 then return 0, 0 end
+    local a = math.min(width / iw, height / ih)
+    return iw * a, ih * a
+  end
+  function w:draw(_, cr, width, height)
+    local img = self._private.image
+    local iw, ih = dims(img)
+    if iw == 0 or ih == 0 or width == 0 or height == 0 then return end
+    local a = math.min(width / iw, height / ih)
+    cr:scale(a, a)
+    cr:set_source_surface(img, 0, 0)
+    cr:paint()
+  end
+  function w:set_image(img)
+    local old = self._private.image
+    if img == old then return end
+    self._private.image = img
+    local ow, oh = dims(old)
+    local nw, nh = dims(img)
+    if ow ~= nw or oh ~= nh then self:emit_signal("widget::layout_changed") end
+    self:emit_signal("widget::redraw_needed")
+  end
+  function w:get_image() return self._private.image end
+  w:set_image(image)
+  w.forced_width, w.forced_height = size, size
+  return w
+end
+
 -- The "code" style is text (a glyph), so its icon slot is a textbox; web/crab use an imagebox.
 local icon
 if is_code then
@@ -340,13 +381,7 @@ if is_code then
     widget = wibox.widget.textbox,
   }
 else
-  icon = wibox.widget {
-    image = resting,
-    resize = true,
-    forced_height = cfg.icon_size,
-    forced_width = cfg.icon_size,
-    widget = wibox.widget.imagebox,
-  }
+  icon = frame_box(resting, cfg.icon_size)
 end
 local label = wibox.widget {
   font = beautiful.font_name .. "Medium 10",
