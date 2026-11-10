@@ -5,6 +5,9 @@ All notable changes to Claude Status Bar are documented here. This project follo
 
 ## [Unreleased]
 
+### Changed
+- **The animated icon no longer re-lays out the whole bar on every frame.** Awesome's `imagebox` emits `widget::layout_changed` each time its image changes, so at 9-14 frames per second the full top bar was re-measured, every textbox included. The icon is now a small widget that only redraws its own area, and asks for a relayout only when the image size changes. It draws exactly like the `imagebox` it replaces. Measured on a 1920x1080 bar with the `clawd` style: Awesome's CPU use dropped by about a third while a session is working.
+
 ## [0.7.0] - 2026-07-12
 
 ### Added
